@@ -1,20 +1,26 @@
 #![forbid(unsafe_code)]
 #![allow(unused_imports)]
+#![feature(let_chains)]
 
 use bytes::{BufMut, Bytes, BytesMut};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
 use crossbeam::channel::RecvError;
+use deepgram::transcription::live::{Alternatives, Channel};
 use deepgram::{Deepgram, DeepgramError};
 use egui::*;
 use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
 use futures::stream::StreamExt;
 use futures::SinkExt;
+use once_cell::sync::Lazy;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::sync::Mutex;
 use std::thread;
 use turbosql::{execute, select, update, Turbosql};
+
+static TRANSCRIPT: Lazy<Mutex<String>> = Lazy::new(Default::default);
 
 #[derive(Turbosql, Default)]
 struct Setting {
@@ -133,12 +139,20 @@ trait MyThings {
 
 impl MyThings for Ui {
 	fn editable(&mut self, text: &mut dyn TextBuffer) -> bool {
-		self.add(TextEdit::multiline(text).font(FontId::new(30.0, FontFamily::Proportional))).changed()
+		self
+			.add(
+				TextEdit::multiline(text)
+					.desired_width(f32::INFINITY)
+					.font(FontId::new(30.0, FontFamily::Proportional)),
+			)
+			.changed()
 	}
 }
 
 impl eframe::App for HttpApp {
 	fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
+		ctx.request_repaint();
+
 		ctx.input(|i| {
 			if i.key_pressed(Key::ArrowDown) {
 				self.line_selected =
@@ -200,16 +214,18 @@ impl eframe::App for HttpApp {
 				self.promise = Some(promise);
 			}
 
-			if let Ok(mut card) = select!(Card "WHERE rowid = " self.line_selected) {
-				ui.label(format!("Card number: {}", card.rowid.unwrap()));
-				ui.label("title:");
-				ui.editable(&mut card.title).then(|| card.update());
-				ui.label("question:");
-				ui.editable(&mut card.question).then(|| card.update());
-				ui.label("answer:");
-				ui.editable(&mut card.answer).then(|| card.update());
-				ui.separator();
-			}
+			// if let Ok(mut card) = select!(Card "WHERE rowid = " self.line_selected) {
+			// 	ui.label(format!("Card number: {}", card.rowid.unwrap()));
+			// 	ui.label("title:");
+			// 	ui.editable(&mut card.title).then(|| card.update());
+			// 	ui.label("question:");
+			// 	ui.editable(&mut card.question).then(|| card.update());
+			// 	ui.label("answer:");
+			// 	ui.editable(&mut card.answer).then(|| card.update());
+			// 	ui.separator();
+			// }
+			let mut transcript = TRANSCRIPT.lock().unwrap().clone();
+			ui.editable(&mut transcript);
 
 			if let Some(promise) = &self.promise {
 				if let Some(result) = promise.ready() {
@@ -368,7 +384,22 @@ fn main() -> eframe::Result<()> {
 				.unwrap();
 
 			while let Some(result) = results.next().await {
-				println!("got: {:?}", result);
+				// println!("got: {:?}", result);
+				{
+					if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
+						channel: Channel { alternatives, .. },
+						..
+					}) = result
+						&& let Some(deepgram::transcription::live::Alternatives { transcript, .. }) =
+							alternatives.first()
+					{
+						eprintln!("{}", transcript);
+						TRANSCRIPT.lock().unwrap().push_str(&transcript);
+						if !transcript.is_empty() {
+							TRANSCRIPT.lock().unwrap().push_str("\n");
+						}
+					}
+				}
 			}
 		})
 	});

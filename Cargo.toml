@@ -6,16 +6,21 @@ rust-version = "1.72"
 version = "0.1.0"
 
 [dependencies]
+bytes = "1"
 cpal = "0.14"
+crossbeam = "0.8.0"
+deepgram = {path = "deepgram-rust-sdk"}
 eframe = {version = "0.26", default-features = false, features = ["default_fonts", "glow", "persistence"]}
 egui = "0.26"
 egui_extras = {version = "0.26", features = ["image"]}
 ehttp = "0.4"
 env_logger = "0.11"
+futures = "0.3"
 image = {version = "0.24", default-features = false, features = ["jpeg", "png"]}
 log = "0.4"
 poll-promise = {version = "0.3", default-features = false}
 serde = {version = "1.0.196", features = ["derive"]}
+tokio = {version = "1", features = ["full"]}
 turbosql = "0.9.0"
 
 # Optimize all dependencies even in debug builds:

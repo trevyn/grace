@@ -1,9 +1,19 @@
 #![forbid(unsafe_code)]
 #![allow(unused_imports)]
 
+use bytes::{BufMut, Bytes, BytesMut};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::Sample;
+use crossbeam::channel::RecvError;
+use deepgram::{Deepgram, DeepgramError};
 use egui::*;
+use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
+use futures::stream::StreamExt;
+use futures::SinkExt;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
+use std::env;
+use std::thread;
 use turbosql::{execute, select, update, Turbosql};
 
 #[derive(Turbosql, Default)]
@@ -337,6 +347,32 @@ impl ColoredText {
 fn main() -> eframe::Result<()> {
 	env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+	let dg = Deepgram::new(env::var("DEEPGRAM_API_KEY").unwrap());
+
+	let rt = tokio::runtime::Runtime::new().expect("Unable to create Runtime");
+
+	// Enter the runtime so that `tokio::spawn` is available immediately.
+	let _enter = rt.enter();
+
+	std::thread::spawn(move || {
+		rt.block_on(async {
+			let mut results = dg
+				.transcription()
+				.stream_request()
+				.stream(microphone_as_stream())
+				.encoding("linear16".to_string())
+				.sample_rate(44100)
+				.channels(1)
+				.start()
+				.await
+				.unwrap();
+
+			while let Some(result) = results.next().await {
+				println!("got: {:?}", result);
+			}
+		})
+	});
+
 	eframe::run_native(
 		"scarlett",
 		eframe::NativeOptions {
@@ -347,4 +383,81 @@ fn main() -> eframe::Result<()> {
 		},
 		Box::new(|cc| Box::new(HttpApp::new(cc))),
 	)
+}
+
+fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
+	let (sync_tx, sync_rx) = crossbeam::channel::unbounded();
+	let (mut async_tx, async_rx) = mpsc::channel(1);
+
+	thread::spawn(move || {
+		let host = cpal::default_host();
+		let device = host.default_input_device().unwrap();
+
+		let config = device.supported_input_configs().unwrap();
+		for config in config {
+			dbg!(&config);
+		}
+
+		let config = device.default_input_config().unwrap();
+
+		dbg!(&config);
+
+		let stream = match config.sample_format() {
+			cpal::SampleFormat::F32 => device
+				.build_input_stream(
+					&config.into(),
+					move |data: &[f32], _: &_| {
+						let mut bytes = BytesMut::with_capacity(data.len() * 2);
+						for sample in data {
+							// dbg!(sample);
+							bytes.put_i16_le(sample.to_i16());
+						}
+						sync_tx.send(bytes.freeze()).unwrap();
+					},
+					|_| panic!(),
+				)
+				.unwrap(),
+			cpal::SampleFormat::I16 => device
+				.build_input_stream(
+					&config.into(),
+					move |data: &[i16], _: &_| {
+						let mut bytes = BytesMut::with_capacity(data.len() * 2);
+						for sample in data {
+							bytes.put_i16_le(*sample);
+						}
+						sync_tx.send(bytes.freeze()).unwrap();
+					},
+					|_| panic!(),
+				)
+				.unwrap(),
+			cpal::SampleFormat::U16 => device
+				.build_input_stream(
+					&config.into(),
+					move |data: &[u16], _: &_| {
+						let mut bytes = BytesMut::with_capacity(data.len() * 2);
+						for sample in data {
+							bytes.put_i16_le(sample.to_i16());
+						}
+						sync_tx.send(bytes.freeze()).unwrap();
+					},
+					|_| panic!(),
+				)
+				.unwrap(),
+		};
+
+		stream.play().unwrap();
+
+		loop {
+			thread::park();
+		}
+	});
+
+	tokio::spawn(async move {
+		loop {
+			let data = sync_rx.recv();
+			async_tx.send(data).await.unwrap();
+		}
+	});
+
+	async_rx
 }

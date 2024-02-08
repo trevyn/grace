@@ -22,6 +22,7 @@ use turbosql::{execute, select, update, Turbosql};
 
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
+static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 
 #[derive(Turbosql, Default)]
 struct Setting {
@@ -187,8 +188,8 @@ impl eframe::App for HttpApp {
 				.then(|| setting.save());
 			// ui.allocate_space(ui.available_size());
 
-			while self.speaker_names.len() < 9 {
-				self.speaker_names.push("".to_string());
+			while self.speaker_names.len() < 20 {
+				self.speaker_names.push(format!("{}", self.speaker_names.len()));
 			}
 
 			if ui.button("dump").clicked() {
@@ -212,12 +213,11 @@ impl eframe::App for HttpApp {
 				println!("");
 			};
 
-			// speaker names
-			ui.label("Speaker names:");
+			ui.label(format!("Duration: {}", *DURATION.lock().unwrap()));
 
-			for (i, name) in self.speaker_names.iter_mut().enumerate() {
+			for name in self.speaker_names.iter_mut() {
 				ui.horizontal(|ui| {
-					ui.label(format!("Speaker {}", i + 1));
+					// ui.label(format!("Speaker {}", i + 1));
 					ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY)).changed().then(|| {
 						// self.speaker_names[i] = name.clone();
 					});
@@ -436,23 +436,30 @@ fn main() -> eframe::Result<()> {
 				println!("got: {:?}", result);
 				{
 					if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
+						duration,
 						is_final,
 						channel: Channel { mut alternatives, .. },
 						..
 					}) = result
-						&& let Some(deepgram::transcription::live::Alternatives { words, .. }) =
-							alternatives.first_mut()
 					{
-						for word in words.iter() {
-							TRANSCRIPT.lock().unwrap().push(Some(word.clone()));
+						if !is_final {
+							*DURATION.lock().unwrap() += duration;
 						}
-						TRANSCRIPT.lock().unwrap().push(None);
 
-						if is_final {
-							for word in words {
-								TRANSCRIPT_FINAL.lock().unwrap().push(Some(word.clone()));
+						if let Some(deepgram::transcription::live::Alternatives { words, .. }) =
+							alternatives.first_mut()
+						{
+							for word in words.iter() {
+								TRANSCRIPT.lock().unwrap().push(Some(word.clone()));
 							}
-							TRANSCRIPT_FINAL.lock().unwrap().push(None);
+							TRANSCRIPT.lock().unwrap().push(None);
+
+							if is_final {
+								for word in words {
+									TRANSCRIPT_FINAL.lock().unwrap().push(Some(word.clone()));
+								}
+								TRANSCRIPT_FINAL.lock().unwrap().push(None);
+							}
 						}
 					}
 				}

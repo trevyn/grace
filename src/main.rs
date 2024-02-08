@@ -6,7 +6,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
 use crossbeam::channel::RecvError;
-use deepgram::transcription::live::{Alternatives, Channel};
+use deepgram::transcription::live::{Alternatives, Channel, Word};
 use deepgram::{Deepgram, DeepgramError};
 use egui::*;
 use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::thread;
 use turbosql::{execute, select, update, Turbosql};
 
-static TRANSCRIPT: Lazy<Mutex<String>> = Lazy::new(Default::default);
+static TRANSCRIPT: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 
 #[derive(Turbosql, Default)]
 struct Setting {
@@ -141,8 +141,10 @@ impl MyThings for Ui {
 	fn editable(&mut self, text: &mut dyn TextBuffer) -> bool {
 		self
 			.add(
+				// vec2(400.0, 300.0),
 				TextEdit::multiline(text)
 					.desired_width(f32::INFINITY)
+					// .desired_height(f32::INFINITY)
 					.font(FontId::new(30.0, FontFamily::Proportional)),
 			)
 			.changed()
@@ -198,51 +200,99 @@ impl eframe::App for HttpApp {
 		});
 
 		CentralPanel::default().show(ctx, |ui| {
-			let prev_url = self.url.clone();
-			let trigger_fetch = ui_url(ui, frame, &mut self.url);
+			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+				let prev_url = self.url.clone();
+				let trigger_fetch = ui_url(ui, frame, &mut self.url);
 
-			if trigger_fetch {
-				let ctx = ctx.clone();
-				let (sender, promise) = Promise::new();
-				let request = ehttp::Request::get(&self.url);
-				ehttp::fetch(request, move |response| {
-					ctx.forget_image(&prev_url);
-					ctx.request_repaint(); // wake up UI thread
-					let resource = response.map(|response| Resource::from_response(&ctx, response));
-					sender.send(resource);
-				});
-				self.promise = Some(promise);
-			}
-
-			// if let Ok(mut card) = select!(Card "WHERE rowid = " self.line_selected) {
-			// 	ui.label(format!("Card number: {}", card.rowid.unwrap()));
-			// 	ui.label("title:");
-			// 	ui.editable(&mut card.title).then(|| card.update());
-			// 	ui.label("question:");
-			// 	ui.editable(&mut card.question).then(|| card.update());
-			// 	ui.label("answer:");
-			// 	ui.editable(&mut card.answer).then(|| card.update());
-			// 	ui.separator();
-			// }
-			let mut transcript = TRANSCRIPT.lock().unwrap().clone();
-			ui.editable(&mut transcript);
-
-			if let Some(promise) = &self.promise {
-				if let Some(result) = promise.ready() {
-					match result {
-						Ok(resource) => {
-							ui_resource(ui, resource);
-						}
-						Err(error) => {
-							// This should only happen if the fetch API isn't available or something similar.
-							ui
-								.colored_label(ui.visuals().error_fg_color, if error.is_empty() { "Error" } else { error });
-						}
-					}
-				} else {
-					ui.spinner();
+				if trigger_fetch {
+					let ctx = ctx.clone();
+					let (sender, promise) = Promise::new();
+					let request = ehttp::Request::get(&self.url);
+					ehttp::fetch(request, move |response| {
+						ctx.forget_image(&prev_url);
+						ctx.request_repaint(); // wake up UI thread
+						let resource = response.map(|response| Resource::from_response(&ctx, response));
+						sender.send(resource);
+					});
+					self.promise = Some(promise);
 				}
-			}
+
+				// if let Ok(mut card) = select!(Card "WHERE rowid = " self.line_selected) {
+				// 	ui.label(format!("Card number: {}", card.rowid.unwrap()));
+				// 	ui.label("title:");
+				// 	ui.editable(&mut card.title).then(|| card.update());
+				// 	ui.label("question:");
+				// 	ui.editable(&mut card.question).then(|| card.update());
+				// 	ui.label("answer:");
+				// 	ui.editable(&mut card.answer).then(|| card.update());
+				// 	ui.separator();
+				// }
+				let words = TRANSCRIPT.lock().unwrap();
+
+				let lines = words.split(|word| word.is_none());
+
+				for line in lines {
+					ui.horizontal(|ui| {
+						for word in line {
+							if let Some(word) = word {
+								let color = match word.speaker {
+									0 => Color32::RED,
+									1 => Color32::GREEN,
+									2 => Color32::BLUE,
+									3 => Color32::YELLOW,
+									4 => Color32::LIGHT_GRAY,
+									5 => Color32::DARK_GRAY,
+									6 => Color32::GRAY,
+									7 => Color32::BLACK,
+									_ => Color32::WHITE,
+								};
+								ui.label(egui::RichText::new(word.word.clone()).color(color).size(30.0));
+							}
+						}
+					});
+				}
+
+				// ui.horizontal(|ui| {
+				// 	for word in words.iter() {
+				// 		let color = match word.speaker {
+				// 			0 => Color32::RED,
+				// 			1 => Color32::GREEN,
+				// 			2 => Color32::BLUE,
+				// 			3 => Color32::YELLOW,
+				// 			4 => Color32::LIGHT_GRAY,
+				// 			5 => Color32::DARK_GRAY,
+				// 			6 => Color32::GRAY,
+				// 			7 => Color32::BLACK,
+				// 			_ => Color32::WHITE,
+				// 		};
+				// 		ui.label(egui::RichText::new(word.word.clone()).color(color).size(30.0));
+				// 		// ui.add(RichText::new("colored").color(Color32::RED));
+				// 		// ui.rich
+				// 		// ui.label(word.word).text_color(color);
+				// 	}
+				// });
+
+				// ui.editable(&mut transcript);
+
+				if let Some(promise) = &self.promise {
+					if let Some(result) = promise.ready() {
+						match result {
+							Ok(resource) => {
+								ui_resource(ui, resource);
+							}
+							Err(error) => {
+								// This should only happen if the fetch API isn't available or something similar.
+								ui.colored_label(
+									ui.visuals().error_fg_color,
+									if error.is_empty() { "Error" } else { error },
+								);
+							}
+						}
+					} else {
+						ui.spinner();
+					}
+				}
+			});
 		});
 	}
 }
@@ -384,20 +434,31 @@ fn main() -> eframe::Result<()> {
 				.unwrap();
 
 			while let Some(result) = results.next().await {
-				// println!("got: {:?}", result);
+				println!("got: {:?}", result);
 				{
 					if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
-						channel: Channel { alternatives, .. },
+						channel: Channel { mut alternatives, .. },
 						..
 					}) = result
-						&& let Some(deepgram::transcription::live::Alternatives { transcript, .. }) =
-							alternatives.first()
+						&& let Some(deepgram::transcription::live::Alternatives { words, .. }) =
+							alternatives.first_mut()
 					{
-						eprintln!("{}", transcript);
-						TRANSCRIPT.lock().unwrap().push_str(&transcript);
-						if !transcript.is_empty() {
-							TRANSCRIPT.lock().unwrap().push_str("\n");
+						// let words = words.into_iter().map(Some).collect();
+						for word in words {
+							TRANSCRIPT.lock().unwrap().push(Some(word.clone()));
 						}
+						TRANSCRIPT.lock().unwrap().push(None);
+						// let words = words.into_iter().map(|word| word.map(|w| Some(w))).collect();
+						// TRANSCRIPT.lock().unwrap().append(words);
+						// let mut transcript = TRANSCRIPT.lock().unwrap();
+						// for word in words {
+						// 	transcript.push_str(format!("{}{} ", word.speaker, word.word).as_str());
+						// }
+						// // eprintln!("{}", transcript);
+						// // TRANSCRIPT.lock().unwrap().push_str(&transcript);
+						// if !words.is_empty() {
+						// 	transcript.push_str("\n");
+						// }
 					}
 				}
 			}

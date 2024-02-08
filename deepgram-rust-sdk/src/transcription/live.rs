@@ -42,12 +42,13 @@ where
     channels: Option<u16>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Word {
     pub word: String,
     pub start: f64,
     pub end: f64,
     pub confidence: f64,
+    pub speaker: u8,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -225,7 +226,15 @@ where
             if let Some(channels) = channels {
                 pairs.append_pair("channels", &channels.to_string());
             }
+            pairs.append_pair("model", "nova-2-general");
+            pairs.append_pair("diarize", "true");
+            pairs.append_pair("interim_results", "true");
+            pairs.append_pair("endpointing", "500");
+
+            //
         }
+
+        dbg!(&base);
 
         let request = Request::builder()
             .method("GET")

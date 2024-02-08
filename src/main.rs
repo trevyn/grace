@@ -21,6 +21,7 @@ use std::thread;
 use turbosql::{execute, select, update, Turbosql};
 
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
+static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 
 #[derive(Turbosql, Default)]
 struct Setting {
@@ -112,6 +113,7 @@ pub struct HttpApp {
 	title_text: String,
 	question_text: String,
 	answer_text: String,
+	speaker_names: Vec<String>,
 
 	#[serde(skip)]
 	promise: Option<Promise<ehttp::Result<Resource>>>,
@@ -177,6 +179,51 @@ impl eframe::App for HttpApp {
 		let cards = select!(Vec<Card> "WHERE NOT deleted").unwrap();
 
 		SidePanel::left("left_panel").show(ctx, |ui| {
+			let mut setting = Setting::get("openai_key");
+			ui.label("openai key:");
+			ui
+				.add(TextEdit::singleline(&mut setting.value).desired_width(f32::INFINITY))
+				.changed()
+				.then(|| setting.save());
+			// ui.allocate_space(ui.available_size());
+
+			while self.speaker_names.len() < 9 {
+				self.speaker_names.push("".to_string());
+			}
+
+			if ui.button("dump").clicked() {
+				let words = TRANSCRIPT_FINAL.lock().unwrap();
+
+				let lines = words.split(|word| word.is_none());
+
+				for line in lines {
+					let mut current_speaker = 100;
+
+					for word in line {
+						if let Some(word) = word {
+							if word.speaker != current_speaker {
+								current_speaker = word.speaker;
+								print!("\n[{}]: ", self.speaker_names[current_speaker as usize]);
+							}
+							print!("{} ", word.word);
+						}
+					}
+				}
+				println!("");
+			};
+
+			// speaker names
+			ui.label("Speaker names:");
+
+			for (i, name) in self.speaker_names.iter_mut().enumerate() {
+				ui.horizontal(|ui| {
+					ui.label(format!("Speaker {}", i + 1));
+					ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY)).changed().then(|| {
+						// self.speaker_names[i] = name.clone();
+					});
+				});
+			}
+
 			ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
 				let size = [ui.available_width(), ui.spacing().interact_size.y.max(20.0)];
 				for card in cards {
@@ -186,53 +233,13 @@ impl eframe::App for HttpApp {
 						self.line_selected = i;
 					}
 				}
-			});
-		});
 
-		SidePanel::right("right_panel").show(ctx, |ui| {
-			let mut setting = Setting::get("openai_key");
-			ui.label("openai key:");
-			ui
-				.add(TextEdit::singleline(&mut setting.value).desired_width(f32::INFINITY))
-				.changed()
-				.then(|| setting.save());
-			ui.allocate_space(ui.available_size());
-		});
-
-		CentralPanel::default().show(ctx, |ui| {
-			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-				let prev_url = self.url.clone();
-				let trigger_fetch = ui_url(ui, frame, &mut self.url);
-
-				if trigger_fetch {
-					let ctx = ctx.clone();
-					let (sender, promise) = Promise::new();
-					let request = ehttp::Request::get(&self.url);
-					ehttp::fetch(request, move |response| {
-						ctx.forget_image(&prev_url);
-						ctx.request_repaint(); // wake up UI thread
-						let resource = response.map(|response| Resource::from_response(&ctx, response));
-						sender.send(resource);
-					});
-					self.promise = Some(promise);
-				}
-
-				// if let Ok(mut card) = select!(Card "WHERE rowid = " self.line_selected) {
-				// 	ui.label(format!("Card number: {}", card.rowid.unwrap()));
-				// 	ui.label("title:");
-				// 	ui.editable(&mut card.title).then(|| card.update());
-				// 	ui.label("question:");
-				// 	ui.editable(&mut card.question).then(|| card.update());
-				// 	ui.label("answer:");
-				// 	ui.editable(&mut card.answer).then(|| card.update());
-				// 	ui.separator();
-				// }
 				let words = TRANSCRIPT.lock().unwrap();
 
 				let lines = words.split(|word| word.is_none());
 
 				for line in lines {
-					ui.horizontal(|ui| {
+					ui.horizontal_wrapped(|ui| {
 						for word in line {
 							if let Some(word) = word {
 								let color = match word.speaker {
@@ -241,56 +248,48 @@ impl eframe::App for HttpApp {
 									2 => Color32::BLUE,
 									3 => Color32::YELLOW,
 									4 => Color32::LIGHT_GRAY,
-									5 => Color32::DARK_GRAY,
-									6 => Color32::GRAY,
+									5 => Color32::DARK_RED,
+									6 => Color32::DARK_GREEN,
 									7 => Color32::BLACK,
 									_ => Color32::WHITE,
 								};
-								ui.label(egui::RichText::new(word.word.clone()).color(color).size(30.0));
+								ui.label(egui::RichText::new(word.word.clone()).color(color).size(15.0));
 							}
 						}
 					});
 				}
+			});
+		});
 
-				// ui.horizontal(|ui| {
-				// 	for word in words.iter() {
-				// 		let color = match word.speaker {
-				// 			0 => Color32::RED,
-				// 			1 => Color32::GREEN,
-				// 			2 => Color32::BLUE,
-				// 			3 => Color32::YELLOW,
-				// 			4 => Color32::LIGHT_GRAY,
-				// 			5 => Color32::DARK_GRAY,
-				// 			6 => Color32::GRAY,
-				// 			7 => Color32::BLACK,
-				// 			_ => Color32::WHITE,
-				// 		};
-				// 		ui.label(egui::RichText::new(word.word.clone()).color(color).size(30.0));
-				// 		// ui.add(RichText::new("colored").color(Color32::RED));
-				// 		// ui.rich
-				// 		// ui.label(word.word).text_color(color);
-				// 	}
-				// });
+		SidePanel::right("right_panel").show(ctx, |ui| {});
 
-				// ui.editable(&mut transcript);
+		CentralPanel::default().show(ctx, |ui| {
+			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+				let words = TRANSCRIPT_FINAL.lock().unwrap();
 
-				if let Some(promise) = &self.promise {
-					if let Some(result) = promise.ready() {
-						match result {
-							Ok(resource) => {
-								ui_resource(ui, resource);
-							}
-							Err(error) => {
-								// This should only happen if the fetch API isn't available or something similar.
-								ui.colored_label(
-									ui.visuals().error_fg_color,
-									if error.is_empty() { "Error" } else { error },
-								);
+				let lines = words.split(|word| word.is_none());
+
+				for line in lines {
+					let mut current_speaker = 100;
+
+					ui.horizontal_wrapped(|ui| {
+						for word in line {
+							if let Some(word) = word {
+								if word.speaker != current_speaker {
+									current_speaker = word.speaker;
+									ui.end_row();
+									ui.horizontal_wrapped(|ui| {
+										ui.label(
+											RichText::new(format!("[{}]: ", self.speaker_names[current_speaker as usize]))
+												.size(30.0),
+										);
+									});
+								}
+								ui.label(RichText::new(word.word.clone()).size(30.0));
+								// ui.add(Label::new(RichText::new(word.word.clone()).color(color).size(30.0)).wrap(true));
 							}
 						}
-					} else {
-						ui.spinner();
-					}
+					});
 				}
 			});
 		});
@@ -327,7 +326,7 @@ fn ui_resource(ui: &mut Ui, resource: &Resource) {
 
 	ui.separator();
 
-	ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+	ScrollArea::vertical().stick_to_bottom(true).auto_shrink(false).show(ui, |ui| {
 		CollapsingHeader::new("Response headers").default_open(false).show(ui, |ui| {
 			Grid::new("response_headers").spacing(vec2(ui.spacing().item_spacing.x * 2.0, 0.0)).show(
 				ui,
@@ -437,28 +436,24 @@ fn main() -> eframe::Result<()> {
 				println!("got: {:?}", result);
 				{
 					if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
+						is_final,
 						channel: Channel { mut alternatives, .. },
 						..
 					}) = result
 						&& let Some(deepgram::transcription::live::Alternatives { words, .. }) =
 							alternatives.first_mut()
 					{
-						// let words = words.into_iter().map(Some).collect();
-						for word in words {
+						for word in words.iter() {
 							TRANSCRIPT.lock().unwrap().push(Some(word.clone()));
 						}
 						TRANSCRIPT.lock().unwrap().push(None);
-						// let words = words.into_iter().map(|word| word.map(|w| Some(w))).collect();
-						// TRANSCRIPT.lock().unwrap().append(words);
-						// let mut transcript = TRANSCRIPT.lock().unwrap();
-						// for word in words {
-						// 	transcript.push_str(format!("{}{} ", word.speaker, word.word).as_str());
-						// }
-						// // eprintln!("{}", transcript);
-						// // TRANSCRIPT.lock().unwrap().push_str(&transcript);
-						// if !words.is_empty() {
-						// 	transcript.push_str("\n");
-						// }
+
+						if is_final {
+							for word in words {
+								TRANSCRIPT_FINAL.lock().unwrap().push(Some(word.clone()));
+							}
+							TRANSCRIPT_FINAL.lock().unwrap().push(None);
+						}
 					}
 				}
 			}

@@ -227,6 +227,8 @@ where
                 pairs.append_pair("channels", &channels.to_string());
             }
             pairs.append_pair("model", "nova-2-general");
+            pairs.append_pair("language", "en");
+            // pairs.append_pair("version", "beta");
             pairs.append_pair("diarize", "true");
             pairs.append_pair("interim_results", "true");
             pairs.append_pair("endpointing", "500");

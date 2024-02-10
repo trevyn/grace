@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::sync::Mutex;
 use std::thread;
-use turbosql::{execute, select, update, Turbosql};
+use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
@@ -43,6 +43,13 @@ impl Setting {
 			self.insert().unwrap();
 		}
 	}
+}
+
+#[derive(Turbosql, Default)]
+struct SampleData {
+	rowid: Option<i64>,
+	record_ms: i64,
+	sample_data: Blob,
 }
 
 #[derive(Turbosql, Default)]
@@ -261,7 +268,7 @@ impl eframe::App for HttpApp {
 			});
 		});
 
-		SidePanel::right("right_panel").show(ctx, |ui| {});
+		// SidePanel::right("right_panel").show(ctx, |ui| {});
 
 		CentralPanel::default().show(ctx, |ui| {
 			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
@@ -501,6 +508,14 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 				.build_input_stream(
 					&config.into(),
 					move |data: &[f32], _: &_| {
+						// dbg!(data.len());
+						let mut bytes = BytesMut::with_capacity(data.len() * 4);
+						for sample in data {
+							bytes.put_f32_le(*sample);
+						}
+						SampleData { rowid: None, record_ms: now_ms(), sample_data: bytes.to_vec() }
+							.insert()
+							.unwrap();
 						let mut bytes = BytesMut::with_capacity(data.len() * 2);
 						for sample in data {
 							// if *sample > 0.5 {

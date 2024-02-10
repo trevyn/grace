@@ -18,6 +18,9 @@ migrations_append_only = [
     "ALTER TABLE cardlog ADD COLUMN card_id INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE cardlog ADD COLUMN time_ms INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE cardlog ADD COLUMN action TEXT NOT NULL DEFAULT ''",
+    "CREATE TABLE sampledata (rowid INTEGER PRIMARY KEY) STRICT",
+    "ALTER TABLE sampledata ADD COLUMN record_ms INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE sampledata ADD COLUMN sample_data BLOB NOT NULL DEFAULT ''",
 ]
 output_generated_schema_for_your_information_do_not_edit = """
   CREATE TABLE _turbosql_migrations (
@@ -38,6 +41,11 @@ output_generated_schema_for_your_information_do_not_edit = """
     card_id INTEGER NOT NULL DEFAULT 0,
     time_ms INTEGER NOT NULL DEFAULT 0,
     action TEXT NOT NULL DEFAULT ''
+  ) STRICT
+  CREATE TABLE sampledata (
+    rowid INTEGER PRIMARY KEY,
+    record_ms INTEGER NOT NULL DEFAULT 0,
+    sample_data BLOB NOT NULL DEFAULT ''
   ) STRICT
   CREATE TABLE setting (
     rowid INTEGER PRIMARY KEY,
@@ -106,6 +114,24 @@ sql_type = "INTEGER NOT NULL"
 name = "action"
 rust_type = "Action"
 sql_type = "TEXT NOT NULL"
+
+[output_generated_tables_do_not_edit.sampledata]
+name = "sampledata"
+
+[[output_generated_tables_do_not_edit.sampledata.columns]]
+name = "rowid"
+rust_type = "Option < i64 >"
+sql_type = "INTEGER PRIMARY KEY"
+
+[[output_generated_tables_do_not_edit.sampledata.columns]]
+name = "record_ms"
+rust_type = "i64"
+sql_type = "INTEGER NOT NULL"
+
+[[output_generated_tables_do_not_edit.sampledata.columns]]
+name = "sample_data"
+rust_type = "Blob"
+sql_type = "BLOB NOT NULL"
 
 [output_generated_tables_do_not_edit.setting]
 name = "setting"

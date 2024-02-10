@@ -204,6 +204,7 @@ pub struct Word {
     ///
     /// [docs]: https://developers.deepgram.com/documentation/features/diarize/
     pub speaker: Option<usize>,
+    pub speaker_confidence: Option<f64>,
 
     /// [`None`] unless the [Punctuation feature][docs] is set.
     /// Features can be set using an [`OptionsBuilder`](`super::options::OptionsBuilder`).

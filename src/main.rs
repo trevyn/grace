@@ -6,7 +6,8 @@ use bytes::{BufMut, Bytes, BytesMut};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
 use crossbeam::channel::RecvError;
-use deepgram::transcription::live::{Alternatives, Channel, Word};
+use deepgram::transcription::live::{Alternatives, Channel, Word as LiveWord};
+use deepgram::transcription::prerecorded::response::Word as PrerecordedWord;
 use deepgram::{Deepgram, DeepgramError};
 use egui::*;
 use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
@@ -23,7 +24,27 @@ use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 mod audiofile;
 mod session;
 
-static TRANSCRIPT: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
+enum Word {
+	Live(LiveWord),
+	Prerecorded(PrerecordedWord),
+}
+
+impl Word {
+	fn speaker(&self) -> u8 {
+		match self {
+			Word::Live(word) => word.speaker,
+			Word::Prerecorded(word) => word.speaker.unwrap() as u8,
+		}
+	}
+	fn word(&self) -> &str {
+		match self {
+			Word::Live(word) => &word.word,
+			Word::Prerecorded(word) => &word.word,
+		}
+	}
+}
+
+static TRANSCRIPT: Lazy<Mutex<Vec<Option<LiveWord>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 
@@ -244,8 +265,13 @@ impl eframe::App for App {
 
 						let transcript = &response.results.channels[0].alternatives[0].transcript;
 						println!("{}", transcript);
-					});
 
+						let words = &response.results.channels[0].alternatives[0].words;
+
+						for word in words.iter() {
+							TRANSCRIPT_FINAL.lock().unwrap().push(Some(Word::Prerecorded(word.clone())));
+						}
+					});
 					// samples is single-channel f32 little endian
 					// make into mp3 file
 				}
@@ -305,7 +331,7 @@ impl eframe::App for App {
 
 									if is_final {
 										for word in words {
-											TRANSCRIPT_FINAL.lock().unwrap().push(Some(word.clone()));
+											TRANSCRIPT_FINAL.lock().unwrap().push(Some(Word::Live(word.clone())));
 										}
 										TRANSCRIPT_FINAL.lock().unwrap().push(None);
 									}
@@ -326,11 +352,11 @@ impl eframe::App for App {
 
 					for word in line {
 						if let Some(word) = word {
-							if word.speaker != current_speaker {
-								current_speaker = word.speaker;
-								print!("\n[{}]: ", self.speaker_names[current_speaker as usize]);
-							}
-							print!("{} ", word.word);
+							// if word.speaker != current_speaker {
+							// 	current_speaker = word.speaker;
+							// 	print!("\n[{}]: ", self.speaker_names[current_speaker as usize]);
+							// }
+							// print!("{} ", word.word);
 						}
 					}
 				}
@@ -399,8 +425,8 @@ impl eframe::App for App {
 					ui.horizontal_wrapped(|ui| {
 						for word in line {
 							if let Some(word) = word {
-								if word.speaker != current_speaker {
-									current_speaker = word.speaker;
+								if word.speaker() != current_speaker {
+									current_speaker = word.speaker();
 									ui.end_row();
 									ui.horizontal_wrapped(|ui| {
 										ui.label(
@@ -409,7 +435,7 @@ impl eframe::App for App {
 										);
 									});
 								}
-								ui.label(RichText::new(word.word.clone()).size(30.0));
+								ui.label(RichText::new(word.word()).size(30.0));
 								// ui.add(Label::new(RichText::new(word.word.clone()).color(color).size(30.0)).wrap(true));
 							}
 						}

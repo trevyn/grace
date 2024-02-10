@@ -20,6 +20,9 @@ use std::sync::Mutex;
 use std::thread;
 use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 
+mod audiofile;
+mod session;
+
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
@@ -115,7 +118,7 @@ impl Resource {
 }
 
 #[derive(Default, Deserialize, Serialize)]
-pub struct HttpApp {
+pub struct App {
 	url: String,
 	line_selected: i64,
 	title_text: String,
@@ -124,16 +127,26 @@ pub struct HttpApp {
 	speaker_names: Vec<String>,
 
 	#[serde(skip)]
+	sessions: Vec<session::Session>,
+	#[serde(skip)]
 	is_recording: bool,
 	#[serde(skip)]
 	promise: Option<Promise<ehttp::Result<Resource>>>,
 }
 
-impl HttpApp {
+impl App {
 	pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
 		cc.egui_ctx.style_mut(|s| s.visuals.override_text_color = Some(Color32::WHITE));
 
 		egui_extras::install_image_loaders(&cc.egui_ctx);
+
+		let mut s = Self::default();
+
+		s.sessions = session::Session::calculate_sessions();
+		// dbg!(&sessions);
+		// let session = sessions.first().unwrap();
+		// dbg!(session.duration_ms());
+		// dbg!(session.samples().len());
 
 		// Load previous app state (if any).
 		// Note that you must enable the `persistence` feature for this to work.
@@ -141,7 +154,7 @@ impl HttpApp {
 		//     return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
 		// }
 
-		Self::default()
+		s
 	}
 }
 
@@ -163,8 +176,8 @@ impl MyThings for Ui {
 	}
 }
 
-impl eframe::App for HttpApp {
-	fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
+impl eframe::App for App {
+	fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
 		ctx.request_repaint();
 
 		ctx.input(|i| {
@@ -196,6 +209,47 @@ impl eframe::App for HttpApp {
 				.changed()
 				.then(|| setting.save());
 			// ui.allocate_space(ui.available_size());
+
+			for (i, session) in self.sessions.iter().enumerate() {
+				if ui.button(format!("Session {}: {} s", i, session.duration_ms() as f32 / 1000.0)).clicked() {
+					let samples = session.samples();
+
+					tokio::spawn(async move {
+						use deepgram::{
+							transcription::prerecorded::{
+								audio_source::AudioSource,
+								options::{Language, Options},
+							},
+							Deepgram, DeepgramError,
+						};
+						use tokio::fs::File;
+
+						// dbg!(session.samples().len());
+						audiofile::save_wav_file(samples);
+
+						let deepgram_api_key =
+							env::var("DEEPGRAM_API_KEY").expect("DEEPGRAM_API_KEY environmental variable");
+
+						let dg_client = Deepgram::new(&deepgram_api_key);
+
+						let file = File::open("temp_audio.wav").await.unwrap();
+
+						let source = AudioSource::from_buffer_with_mime_type(file, "audio/wav");
+
+						let options = Options::builder().punctuate(false).diarize(true).build();
+
+						let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
+
+						dbg!(&response);
+
+						let transcript = &response.results.channels[0].alternatives[0].transcript;
+						println!("{}", transcript);
+					});
+
+					// samples is single-channel f32 little endian
+					// make into mp3 file
+				}
+			}
 
 			while self.speaker_names.len() < 20 {
 				self.speaker_names.push(format!("{}", self.speaker_names.len()));
@@ -498,7 +552,7 @@ async fn main() -> eframe::Result<()> {
 				.with_min_inner_size([300.0, 220.0]),
 			..Default::default()
 		},
-		Box::new(|cc| Box::new(HttpApp::new(cc))),
+		Box::new(|cc| Box::new(App::new(cc))),
 	)
 }
 

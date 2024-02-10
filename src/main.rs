@@ -503,12 +503,15 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 					move |data: &[f32], _: &_| {
 						let mut bytes = BytesMut::with_capacity(data.len() * 2);
 						for sample in data {
-							// dbg!(sample);
-							bytes.put_i16_le(sample.to_i16());
+							// if *sample > 0.5 {
+							// 	dbg!(sample);
+							// }
+							bytes.put_i16_le(sample.to_sample::<i16>());
 						}
 						sync_tx.send(bytes.freeze()).unwrap();
 					},
 					|_| panic!(),
+					None,
 				)
 				.unwrap(),
 			cpal::SampleFormat::I16 => device
@@ -522,6 +525,7 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 						sync_tx.send(bytes.freeze()).unwrap();
 					},
 					|_| panic!(),
+					None,
 				)
 				.unwrap(),
 			cpal::SampleFormat::U16 => device
@@ -530,13 +534,15 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 					move |data: &[u16], _: &_| {
 						let mut bytes = BytesMut::with_capacity(data.len() * 2);
 						for sample in data {
-							bytes.put_i16_le(sample.to_i16());
+							bytes.put_i16_le(sample.to_sample::<i16>());
 						}
 						sync_tx.send(bytes.freeze()).unwrap();
 					},
 					|_| panic!(),
+					None,
 				)
 				.unwrap(),
+			_ => panic!("unsupported sample format"),
 		};
 
 		stream.play().unwrap();

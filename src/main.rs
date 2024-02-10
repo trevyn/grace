@@ -124,6 +124,8 @@ pub struct HttpApp {
 	speaker_names: Vec<String>,
 
 	#[serde(skip)]
+	is_recording: bool,
+	#[serde(skip)]
 	promise: Option<Promise<ehttp::Result<Resource>>>,
 }
 
@@ -197,6 +199,67 @@ impl eframe::App for HttpApp {
 
 			while self.speaker_names.len() < 20 {
 				self.speaker_names.push(format!("{}", self.speaker_names.len()));
+			}
+
+			if ui
+				.add_enabled(
+					!self.is_recording,
+					Button::new(if self.is_recording { "recording..." } else { "record" }),
+				)
+				.clicked()
+			{
+				self.is_recording = true;
+				tokio::spawn(async {
+					println!("transcription starting...");
+
+					let dg = Deepgram::new(env::var("DEEPGRAM_API_KEY").unwrap());
+
+					let mut results = dg
+						.transcription()
+						.stream_request()
+						.stream(microphone_as_stream())
+						.encoding("linear16".to_string())
+						.sample_rate(44100)
+						.channels(1)
+						.start()
+						.await
+						.unwrap();
+
+					println!("transcription started");
+
+					while let Some(result) = results.next().await {
+						println!("got: {:?}", result);
+						{
+							if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
+								duration,
+								is_final,
+								channel: Channel { mut alternatives, .. },
+								..
+							}) = result
+							{
+								if !is_final {
+									*DURATION.lock().unwrap() += duration;
+								}
+
+								if let Some(deepgram::transcription::live::Alternatives { words, .. }) =
+									alternatives.first_mut()
+								{
+									for word in words.iter() {
+										TRANSCRIPT.lock().unwrap().push(Some(word.clone()));
+									}
+									TRANSCRIPT.lock().unwrap().push(None);
+
+									if is_final {
+										for word in words {
+											TRANSCRIPT_FINAL.lock().unwrap().push(Some(word.clone()));
+										}
+										TRANSCRIPT_FINAL.lock().unwrap().push(None);
+									}
+								}
+							}
+						}
+					}
+				});
 			}
 
 			if ui.button("dump").clicked() {
@@ -416,63 +479,16 @@ impl ColoredText {
 	}
 }
 
-fn main() -> eframe::Result<()> {
+#[tokio::main]
+async fn main() -> eframe::Result<()> {
 	env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-	let dg = Deepgram::new(env::var("DEEPGRAM_API_KEY").unwrap());
+	// let rt = tokio::runtime::Runtime::new().expect("Unable to create Runtime");
 
-	let rt = tokio::runtime::Runtime::new().expect("Unable to create Runtime");
+	// // Enter the runtime so that `tokio::spawn` is available immediately.
+	// let _enter = rt.enter();
 
-	// Enter the runtime so that `tokio::spawn` is available immediately.
-	let _enter = rt.enter();
-
-	std::thread::spawn(move || {
-		rt.block_on(async {
-			let mut results = dg
-				.transcription()
-				.stream_request()
-				.stream(microphone_as_stream())
-				.encoding("linear16".to_string())
-				.sample_rate(44100)
-				.channels(1)
-				.start()
-				.await
-				.unwrap();
-
-			while let Some(result) = results.next().await {
-				println!("got: {:?}", result);
-				{
-					if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
-						duration,
-						is_final,
-						channel: Channel { mut alternatives, .. },
-						..
-					}) = result
-					{
-						if !is_final {
-							*DURATION.lock().unwrap() += duration;
-						}
-
-						if let Some(deepgram::transcription::live::Alternatives { words, .. }) =
-							alternatives.first_mut()
-						{
-							for word in words.iter() {
-								TRANSCRIPT.lock().unwrap().push(Some(word.clone()));
-							}
-							TRANSCRIPT.lock().unwrap().push(None);
-
-							if is_final {
-								for word in words {
-									TRANSCRIPT_FINAL.lock().unwrap().push(Some(word.clone()));
-								}
-								TRANSCRIPT_FINAL.lock().unwrap().push(None);
-							}
-						}
-					}
-				}
-			}
-		})
-	});
+	// std::thread::spawn(move || rt.block_on(async {}));
 
 	eframe::run_native(
 		"scarlett",

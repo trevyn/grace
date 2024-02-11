@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 #![allow(unused_imports)]
-#![feature(let_chains)]
+// #![feature(let_chains)]
 
+use async_openai::types::ChatCompletionRequestSystemMessageArgs;
 use bytes::{BufMut, Bytes, BytesMut};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
@@ -46,6 +47,7 @@ impl Word {
 
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<LiveWord>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
+static OPENAI: Lazy<Mutex<String>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 
 #[derive(Turbosql, Default)]
@@ -146,6 +148,8 @@ pub struct App {
 	question_text: String,
 	answer_text: String,
 	speaker_names: Vec<String>,
+	system_text: String,
+	prompt_text: String,
 
 	#[serde(skip)]
 	sessions: Vec<session::Session>,
@@ -223,12 +227,12 @@ impl eframe::App for App {
 		let cards = select!(Vec<Card> "WHERE NOT deleted").unwrap();
 
 		SidePanel::left("left_panel").show(ctx, |ui| {
-			let mut setting = Setting::get("openai_key");
-			ui.label("openai key:");
-			ui
-				.add(TextEdit::singleline(&mut setting.value).desired_width(f32::INFINITY))
-				.changed()
-				.then(|| setting.save());
+			// let mut setting = Setting::get("openai_key");
+			// ui.label("openai key:");
+			// ui
+			// 	.add(TextEdit::singleline(&mut setting.value).desired_width(f32::INFINITY))
+			// 	.changed()
+			// 	.then(|| setting.save());
 			// ui.allocate_space(ui.available_size());
 
 			for (i, session) in self.sessions.iter().enumerate() {
@@ -257,7 +261,13 @@ impl eframe::App for App {
 
 						let source = AudioSource::from_buffer_with_mime_type(file, "audio/wav");
 
-						let options = Options::builder().punctuate(false).diarize(true).build();
+						let options = Options::builder()
+							.punctuate(false)
+							.diarize(true)
+							.model(deepgram::transcription::prerecorded::options::Model::CustomId(
+								"nova-2-meeting".to_string(),
+							))
+							.build();
 
 						let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
 
@@ -411,7 +421,34 @@ impl eframe::App for App {
 			});
 		});
 
-		// SidePanel::right("right_panel").show(ctx, |ui| {});
+		SidePanel::right("right_panel").show(ctx, |ui| {
+			ui.add(
+				TextEdit::multiline(&mut self.system_text)
+					.font(FontId::new(20.0, FontFamily::Monospace))
+					.desired_width(f32::INFINITY),
+			);
+			ui.label("[transcript goes here]");
+			ui.add(
+				TextEdit::multiline(&mut self.prompt_text)
+					.font(FontId::new(20.0, FontFamily::Monospace))
+					.desired_width(f32::INFINITY),
+			);
+			if ui.button("do it").clicked() {
+				OPENAI.lock().unwrap().clear();
+				let system = self.system_text.clone();
+				let prompt = self.prompt_text.clone();
+				tokio::spawn(async {
+					run_openai(system, prompt).await.unwrap();
+				});
+			};
+			// ui.code_editor(&mut self.editor_text).font_size(0.0);
+			ui.label(
+				egui::RichText::new(OPENAI.lock().unwrap().as_str())
+					.font(FontId::new(20.0, FontFamily::Monospace)),
+			);
+			// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
+			// );
+		});
 
 		CentralPanel::default().show(ctx, |ui| {
 			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
@@ -671,4 +708,47 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 	});
 
 	async_rx
+}
+
+pub(crate) async fn run_openai(
+	system: String,
+	prompt: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+	use std::io::{stdout, Write};
+
+	use async_openai::types::ChatCompletionRequestUserMessageArgs;
+	use async_openai::{types::CreateChatCompletionRequestArgs, Client};
+	use futures::StreamExt;
+
+	let client = Client::new();
+
+	let request = CreateChatCompletionRequestArgs::default()
+		.model("gpt-3.5-turbo-0125")
+		.max_tokens(4096u16)
+		.messages([
+			ChatCompletionRequestSystemMessageArgs::default().content(system).build()?.into(),
+			ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into(),
+		])
+		.build()?;
+
+	let mut stream = client.chat().create_stream(request).await?;
+
+	while let Some(result) = stream.next().await {
+		match result {
+			Ok(response) => {
+				response.choices.iter().for_each(|chat_choice| {
+					if let Some(ref content) = chat_choice.delta.content {
+						// print!("{}", content);
+						OPENAI.lock().unwrap().push_str(content);
+					}
+				});
+			}
+			Err(err) => {
+				panic!("error: {err}");
+			}
+		}
+		// stdout().flush()?;
+	}
+
+	Ok(())
 }

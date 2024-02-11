@@ -352,11 +352,11 @@ impl eframe::App for App {
 
 					for word in line {
 						if let Some(word) = word {
-							// if word.speaker != current_speaker {
-							// 	current_speaker = word.speaker;
-							// 	print!("\n[{}]: ", self.speaker_names[current_speaker as usize]);
-							// }
-							// print!("{} ", word.word);
+							if word.speaker() != current_speaker {
+								current_speaker = word.speaker();
+								print!("\n[{}]: ", self.speaker_names[current_speaker as usize]);
+							}
+							print!("{} ", word.word());
 						}
 					}
 				}

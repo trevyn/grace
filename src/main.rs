@@ -205,6 +205,8 @@ impl eframe::App for App {
 	fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
 		ctx.request_repaint();
 
+		// self.sessions = session::Session::calculate_sessions();
+
 		ctx.input(|i| {
 			if i.key_pressed(Key::ArrowDown) {
 				self.line_selected =
@@ -249,6 +251,9 @@ impl eframe::App for App {
 						};
 						use tokio::fs::File;
 
+						// clear transcript
+						TRANSCRIPT_FINAL.lock().unwrap().clear();
+
 						// dbg!(session.samples().len());
 						audiofile::save_wav_file(samples);
 
@@ -257,9 +262,9 @@ impl eframe::App for App {
 
 						let dg_client = Deepgram::new(&deepgram_api_key);
 
-						let file = File::open("temp_audio.wav").await.unwrap();
+						let file = File::open("temp_audio.aac").await.unwrap();
 
-						let source = AudioSource::from_buffer_with_mime_type(file, "audio/wav");
+						let source = AudioSource::from_buffer_with_mime_type(file, "audio/aac");
 
 						let options = Options::builder()
 							.punctuate(false)
@@ -269,8 +274,9 @@ impl eframe::App for App {
 							))
 							.build();
 
+						eprintln!("transcribing...");
 						let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
-
+						eprintln!("complete.");
 						dbg!(&response);
 
 						let transcript = &response.results.channels[0].alternatives[0].transcript;
@@ -299,6 +305,7 @@ impl eframe::App for App {
 				.clicked()
 			{
 				self.is_recording = true;
+				self.sessions.push(session::Session { start_ms: now_ms(), end_ms: i64::MAX });
 				tokio::spawn(async {
 					println!("transcription starting...");
 

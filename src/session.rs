@@ -3,8 +3,8 @@ use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 
 #[derive(Debug)]
 pub(crate) struct Session {
-	start_ms: i64,
-	end_ms: i64,
+	pub(crate) start_ms: i64,
+	pub(crate) end_ms: i64,
 }
 
 impl Session {

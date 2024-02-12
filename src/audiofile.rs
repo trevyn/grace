@@ -3,6 +3,7 @@ use hound::{SampleFormat, WavSpec, WavWriter};
 use std::io::Cursor;
 
 pub(crate) fn save_wav_file(input_bytes: Vec<u8>) {
+	eprintln!("save_wav_file");
 	// The sample rate (in Hz) of your audio.
 	let sample_rate = 44100; // for example, CD quality
 
@@ -39,4 +40,28 @@ pub(crate) fn save_wav_file(input_bytes: Vec<u8>) {
 
 	// Finalize the WAV file
 	writer.finalize().expect("Failed to finalize WAV file");
+
+	eprintln!("convert to aac");
+
+	let output_file = "temp_audio.aac"; // Replace with your desired output AAC file path
+	let result = std::process::Command::new("ffmpeg")
+		.args(&[
+			"-y",
+			"-i",
+			wav_path, // Input file -c:a libfdk_aac -profile:a aac_he -b:a 64k
+			"-c:a",
+			"aac_at",
+			"-vn",       // No video (audio-only)
+			output_file, // Output file
+		])
+		.output()
+		.expect("Failed to execute ffmpeg command");
+
+	if result.status.success() {
+		println!("Conversion completed successfully.");
+	} else {
+		eprintln!("Conversion failed.");
+		eprintln!("stderr: {}", String::from_utf8_lossy(&result.stderr));
+	}
+	eprintln!("done");
 }

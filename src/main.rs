@@ -50,6 +50,15 @@ static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::def
 static OPENAI: Lazy<Mutex<String>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 
+#[derive(Default)]
+struct WheelWindow {
+	system: String,
+	prompt: String,
+	completion: String,
+}
+
+static WHEEL_WINDOWS: Lazy<Mutex<Vec<WheelWindow>>> = Lazy::new(Default::default);
+
 #[derive(Turbosql, Default)]
 struct Setting {
 	rowid: Option<i64>,
@@ -387,6 +396,10 @@ impl eframe::App for App {
 				println!("{}", self.get_transcript());
 			};
 
+			if ui.button("add window").clicked() {
+				WHEEL_WINDOWS.lock().unwrap().push(Default::default());
+			};
+
 			ui.label(format!("Duration: {}", *DURATION.lock().unwrap()));
 
 			for name in self.speaker_names.iter_mut() {
@@ -435,39 +448,75 @@ impl eframe::App for App {
 			});
 		});
 
-		SidePanel::right("right_panel").show(ctx, |ui| {
-			ui.add(
-				TextEdit::multiline(&mut self.system_text)
-					.font(FontId::new(20.0, FontFamily::Monospace))
-					.desired_width(f32::INFINITY),
-			);
-			ui.label("[transcript goes here]");
-			ui.add(
-				TextEdit::multiline(&mut self.prompt_text)
-					.font(FontId::new(20.0, FontFamily::Monospace))
-					.desired_width(f32::INFINITY),
-			);
-			if ui.button("do it").clicked() {
-				OPENAI.lock().unwrap().clear();
-				let system = self.system_text.clone();
-				let prompt = self.prompt_text.clone();
-				let transcript = self.get_transcript();
-				tokio::spawn(async {
-					run_openai(system, transcript, prompt).await.unwrap();
-				});
-			};
-			// ui.code_editor(&mut self.editor_text).font_size(0.0);
-			ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-				ui.label(
-					egui::RichText::new(OPENAI.lock().unwrap().as_str())
-						.font(FontId::new(20.0, FontFamily::Monospace)),
+		let len = WHEEL_WINDOWS.lock().unwrap().len();
+		for i in 0..len {
+			egui::Window::new(format!("wheel {}", i)).show(ctx, |ui| {
+				ui.add(
+					TextEdit::multiline(&mut WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().system)
+						.font(FontId::new(20.0, FontFamily::Monospace))
+						.desired_width(f32::INFINITY),
 				);
+				ui.label("[transcript goes here]");
+				ui.add(
+					TextEdit::multiline(&mut WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().prompt)
+						.font(FontId::new(20.0, FontFamily::Monospace))
+						.desired_width(f32::INFINITY),
+				);
+				if ui.button("do it").clicked() {
+					{
+						WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().completion.clear();
+					}
+					// let system = wheelwindow.system.clone();
+					// let prompt = wheelwindow.prompt.clone();
+					let transcript = self.get_transcript();
+					tokio::spawn(async move {
+						run_openai(i, transcript).await.unwrap();
+					});
+				};
+				// ui.code_editor(&mut self.editor_text).font_size(0.0);
+				ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+					ui.label(
+						egui::RichText::new(WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().completion.as_str())
+							.font(FontId::new(20.0, FontFamily::Monospace)),
+					);
+				});
+				// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
+				// );
 			});
-			// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
-			// );
-		});
+		}
 
-		CentralPanel::default().show(ctx, |ui| {
+		// egui::Window::new("wheel 1").show(ctx, |ui| {
+		// 	ui.add(
+		// 		TextEdit::multiline(&mut self.system_text)
+		// 			.font(FontId::new(20.0, FontFamily::Monospace))
+		// 			.desired_width(f32::INFINITY),
+		// 	);
+		// 	ui.label("[transcript goes here]");
+		// 	ui.add(
+		// 		TextEdit::multiline(&mut self.prompt_text)
+		// 			.font(FontId::new(20.0, FontFamily::Monospace))
+		// 			.desired_width(f32::INFINITY),
+		// 	);
+		// 	if ui.button("do it").clicked() {
+		// 		OPENAI.lock().unwrap().clear();
+		// 		let system = self.system_text.clone();
+		// 		let prompt = self.prompt_text.clone();
+		// 		let transcript = self.get_transcript();
+		// 		tokio::spawn(async {
+		// 			run_openai(system, transcript, prompt).await.unwrap();
+		// 		});
+		// 	};
+		// 	// ui.code_editor(&mut self.editor_text).font_size(0.0);
+		// 	ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+		// 		ui.label(
+		// 			egui::RichText::new(OPENAI.lock().unwrap().as_str())
+		// 				.font(FontId::new(20.0, FontFamily::Monospace)),
+		// 		);
+		// 	});
+		// 	// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
+		// 	// );
+		// });
+		egui::Window::new("Transcript").show(ctx, |ui| {
 			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
 				let words = TRANSCRIPT_FINAL.lock().unwrap();
 
@@ -496,7 +545,9 @@ impl eframe::App for App {
 					});
 				}
 			});
+			// ui.allocate_space(ui.available_size());
 		});
+		CentralPanel::default().show(ctx, |ui| {});
 	}
 }
 
@@ -728,9 +779,8 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 }
 
 pub(crate) async fn run_openai(
-	system: String,
+	i: usize,
 	transcript: String,
-	prompt: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	use std::io::{stdout, Write};
 
@@ -739,6 +789,9 @@ pub(crate) async fn run_openai(
 	use futures::StreamExt;
 
 	let client = Client::new();
+
+	let system = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().system.clone();
+	let prompt = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().prompt.clone();
 
 	let request = CreateChatCompletionRequestArgs::default()
 		.model("gpt-3.5-turbo-0125")
@@ -758,7 +811,8 @@ pub(crate) async fn run_openai(
 				response.choices.iter().for_each(|chat_choice| {
 					if let Some(ref content) = chat_choice.delta.content {
 						// print!("{}", content);
-						OPENAI.lock().unwrap().push_str(content);
+						WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().completion.push_str(content);
+						// OPENAI.lock().unwrap().push_str(content);
 					}
 				});
 			}

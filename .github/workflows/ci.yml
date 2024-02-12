@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule: [cron: "40 1 * * *"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  assign:
+    name: assign build_id
+    runs-on: ubuntu-latest
+
+    steps:
+      - run: wget https://github.com/trevyn/animal-time/releases/latest/download/animal-time
+      - run: chmod +x animal-time
+      - run: ./animal-time > build_id
+      - run: cat build_id
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build_id
+          path: build_id
+
+  release:
+    permissions:
+      contents: write
+    needs: [assign]
+    runs-on: macos-latest
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+
+      - run: cat build_id/build_id
+
+      - run: echo "BUILD_ID=$(cat build_id/build_id)" >> $GITHUB_ENV
+
+      - run: rustup default nightly && rustup update nightly
+
+      - run: cargo build --release
+
+      - run: |
+          mv target/release/scarlett scarlett
+
+      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

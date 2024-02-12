@@ -160,6 +160,30 @@ pub struct App {
 }
 
 impl App {
+	fn get_transcript(&self) -> String {
+		let mut transcript: String = String::new();
+
+		let words = TRANSCRIPT_FINAL.lock().unwrap();
+
+		let lines = words.split(|word| word.is_none());
+
+		for line in lines {
+			let mut current_speaker = 100;
+
+			for word in line {
+				if let Some(word) = word {
+					if word.speaker() != current_speaker {
+						current_speaker = word.speaker();
+						transcript.push_str(&format!("\n[{}]: ", self.speaker_names[current_speaker as usize]));
+					}
+					transcript.push_str(&format!("{} ", word.word()));
+				}
+			}
+		}
+		transcript.push('\n');
+		transcript
+	}
+
 	pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
 		cc.egui_ctx.style_mut(|s| s.visuals.override_text_color = Some(Color32::WHITE));
 
@@ -360,24 +384,7 @@ impl eframe::App for App {
 			}
 
 			if ui.button("dump").clicked() {
-				let words = TRANSCRIPT_FINAL.lock().unwrap();
-
-				let lines = words.split(|word| word.is_none());
-
-				for line in lines {
-					let mut current_speaker = 100;
-
-					for word in line {
-						if let Some(word) = word {
-							if word.speaker() != current_speaker {
-								current_speaker = word.speaker();
-								print!("\n[{}]: ", self.speaker_names[current_speaker as usize]);
-							}
-							print!("{} ", word.word());
-						}
-					}
-				}
-				println!("");
+				println!("{}", self.get_transcript());
 			};
 
 			ui.label(format!("Duration: {}", *DURATION.lock().unwrap()));
@@ -444,8 +451,9 @@ impl eframe::App for App {
 				OPENAI.lock().unwrap().clear();
 				let system = self.system_text.clone();
 				let prompt = self.prompt_text.clone();
+				let transcript = self.get_transcript();
 				tokio::spawn(async {
-					run_openai(system, prompt).await.unwrap();
+					run_openai(system, transcript, prompt).await.unwrap();
 				});
 			};
 			// ui.code_editor(&mut self.editor_text).font_size(0.0);
@@ -719,6 +727,7 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 
 pub(crate) async fn run_openai(
 	system: String,
+	transcript: String,
 	prompt: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	use std::io::{stdout, Write};
@@ -734,6 +743,7 @@ pub(crate) async fn run_openai(
 		.max_tokens(4096u16)
 		.messages([
 			ChatCompletionRequestSystemMessageArgs::default().content(system).build()?.into(),
+			ChatCompletionRequestUserMessageArgs::default().content(transcript).build()?.into(),
 			ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into(),
 		])
 		.build()?;

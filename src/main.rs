@@ -240,26 +240,28 @@ impl eframe::App for App {
 
 		// self.sessions = session::Session::calculate_sessions();
 
-		ctx.input(|i| {
-			if i.key_pressed(Key::ArrowDown) {
-				self.line_selected =
-					select!(i64 "MIN(rowid) FROM card WHERE NOT deleted AND rowid > " self.line_selected)
-						.unwrap_or(self.line_selected);
-			} else if i.key_pressed(Key::ArrowUp) {
-				self.line_selected =
-					select!(i64 "MAX(rowid) FROM card WHERE NOT deleted AND rowid < " self.line_selected)
-						.unwrap_or(self.line_selected);
-			} else if i.key_pressed(Key::Enter) {
-				Card::default().insert().unwrap();
-			} else if i.key_pressed(Key::Backspace) {
-				let _ = update!("card SET deleted = 1 WHERE rowid = " self.line_selected);
-				self.line_selected =
-					select!(i64 "MIN(rowid) FROM card WHERE NOT deleted AND rowid > " self.line_selected)
-						.unwrap_or(0);
-			}
-		});
+		// ctx.input(|i| {
+		// 	if i.key_pressed(Key::ArrowDown) {
+		// 		self.line_selected =
+		// 			select!(i64 "MIN(rowid) FROM card WHERE NOT deleted AND rowid > " self.line_selected)
+		// 				.unwrap_or(self.line_selected);
+		// 	} else if i.key_pressed(Key::ArrowUp) {
+		// 		self.line_selected =
+		// 			select!(i64 "MAX(rowid) FROM card WHERE NOT deleted AND rowid < " self.line_selected)
+		// 				.unwrap_or(self.line_selected);
+		// 	} else if i.key_pressed(Key::Enter) {
+		// 		Card::default().insert().unwrap();
+		// 	} else if i.key_pressed(Key::Backspace) {
+		// 		let _ = update!("card SET deleted = 1 WHERE rowid = " self.line_selected);
+		// 		self.line_selected =
+		// 			select!(i64 "MIN(rowid) FROM card WHERE NOT deleted AND rowid > " self.line_selected)
+		// 				.unwrap_or(0);
+		// 	}
+		// });
 
-		let cards = select!(Vec<Card> "WHERE NOT deleted").unwrap();
+		// let cards = select!(Vec<Card> "WHERE NOT deleted").unwrap();
+
+		let mut do_all = false;
 
 		SidePanel::left("left_panel").show(ctx, |ui| {
 			// let mut setting = Setting::get("openai_key");
@@ -400,6 +402,10 @@ impl eframe::App for App {
 				WHEEL_WINDOWS.lock().unwrap().push(Default::default());
 			};
 
+			if ui.button("do all").clicked() {
+				do_all = true;
+			};
+
 			ui.label(format!("Duration: {}", *DURATION.lock().unwrap()));
 
 			for name in self.speaker_names.iter_mut() {
@@ -412,14 +418,14 @@ impl eframe::App for App {
 			}
 
 			ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-				let size = [ui.available_width(), ui.spacing().interact_size.y.max(20.0)];
-				for card in cards {
-					let i = card.rowid.unwrap();
-					let label = SelectableLabel::new(i == self.line_selected, format!("{}: {}", i, card.title));
-					if ui.add_sized(size, label).clicked() {
-						self.line_selected = i;
-					}
-				}
+				// let size = [ui.available_width(), ui.spacing().interact_size.y.max(20.0)];
+				// for card in cards {
+				// 	let i = card.rowid.unwrap();
+				// 	let label = SelectableLabel::new(i == self.line_selected, format!("{}: {}", i, card.title));
+				// 	if ui.add_sized(size, label).clicked() {
+				// 		self.line_selected = i;
+				// 	}
+				// }
 
 				let words = TRANSCRIPT.lock().unwrap();
 
@@ -462,7 +468,7 @@ impl eframe::App for App {
 						.font(FontId::new(20.0, FontFamily::Monospace))
 						.desired_width(f32::INFINITY),
 				);
-				if ui.button("do it").clicked() {
+				if do_all || ui.button("do it").clicked() {
 					{
 						WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().completion.clear();
 					}

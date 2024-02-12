@@ -457,10 +457,12 @@ impl eframe::App for App {
 				});
 			};
 			// ui.code_editor(&mut self.editor_text).font_size(0.0);
-			ui.label(
-				egui::RichText::new(OPENAI.lock().unwrap().as_str())
-					.font(FontId::new(20.0, FontFamily::Monospace)),
-			);
+			ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+				ui.label(
+					egui::RichText::new(OPENAI.lock().unwrap().as_str())
+						.font(FontId::new(20.0, FontFamily::Monospace)),
+				);
+			});
 			// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
 			// );
 		});

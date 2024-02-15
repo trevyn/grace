@@ -800,7 +800,8 @@ pub(crate) async fn run_openai(
 	let prompt = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().prompt.clone();
 
 	let request = CreateChatCompletionRequestArgs::default()
-		.model("gpt-3.5-turbo-0125")
+		.model("gpt-4-0125-preview")
+		// .model("gpt-3.5-turbo-0125")
 		.max_tokens(4096u16)
 		.messages([
 			ChatCompletionRequestSystemMessageArgs::default().content(system).build()?.into(),

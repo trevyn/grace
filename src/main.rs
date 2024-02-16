@@ -48,7 +48,6 @@ impl Word {
 
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<LiveWord>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
-static OPENAI: Lazy<Mutex<String>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 
 #[derive(Default)]
@@ -361,7 +360,7 @@ impl eframe::App for App {
 					println!("transcription started");
 
 					while let Some(result) = results.next().await {
-						println!("got: {:?}", result);
+						// println!("got: {:?}", result);
 						{
 							if let Ok(deepgram::transcription::live::StreamResponse::TranscriptResponse {
 								duration,
@@ -722,9 +721,6 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 						for sample in data {
 							bytes.put_f32_le(*sample);
 						}
-						SampleData { rowid: None, record_ms: now_ms(), sample_data: bytes.to_vec() }
-							.insert()
-							.unwrap();
 						let mut bytes = BytesMut::with_capacity(data.len() * 2);
 						for sample in data {
 							// if *sample > 0.5 {
@@ -777,8 +773,20 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 	});
 
 	tokio::spawn(async move {
+		let mut buffer = Vec::with_capacity(150000);
 		loop {
 			let data = sync_rx.recv();
+			if let Ok(data) = &data {
+				buffer.extend(data.clone().to_vec());
+				if buffer.len() > 100000 {
+					let moved_buffer = buffer;
+					buffer = Vec::with_capacity(150000);
+					tokio::task::spawn_blocking(|| {
+						SampleData { rowid: None, record_ms: now_ms(), sample_data: moved_buffer }.insert().unwrap();
+					});
+				}
+			}
+
 			async_tx.send(data).await.unwrap();
 		}
 	});

@@ -20,7 +20,7 @@ impl Session {
 			.fold(None, |prev_record_ms, record_ms| {
 				if let Some(prev_record_ms) = prev_record_ms {
 					prevv_record_ms = prev_record_ms;
-					if record_ms - prev_record_ms > 1000 {
+					if record_ms - prev_record_ms > 3000 {
 						sessions.push(Session { start_ms, end_ms: prev_record_ms });
 						start_ms = *record_ms;
 					}

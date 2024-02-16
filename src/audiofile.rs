@@ -14,9 +14,9 @@ pub(crate) fn save_wav_file(input_bytes: Vec<u8>) {
 	let mut cursor = Cursor::new(input_bytes);
 	let mut samples = Vec::new();
 	for _ in 0..num_samples {
-		match cursor.read_f32::<LittleEndian>() {
+		match cursor.read_i16::<LittleEndian>() {
 			Ok(sample) => samples.push(sample),
-			Err(e) => eprintln!("Error converting bytes to f32 samples: {:?}", e),
+			Err(e) => eprintln!("Error converting bytes to samples: {:?}", e),
 		}
 	}
 
@@ -24,8 +24,8 @@ pub(crate) fn save_wav_file(input_bytes: Vec<u8>) {
 	let spec = WavSpec {
 		channels: 1,
 		sample_rate: sample_rate as u32,
-		bits_per_sample: 32,
-		sample_format: SampleFormat::Float,
+		bits_per_sample: 16,
+		sample_format: SampleFormat::Int,
 	};
 
 	// Define a path for the intermediate WAV file

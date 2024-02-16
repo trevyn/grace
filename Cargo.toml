@@ -23,8 +23,11 @@ image = {version = "0.24", default-features = false, features = ["jpeg", "png"]}
 log = "0.4"
 once_cell = "1"
 poll-promise = {version = "0.3", default-features = false}
+regex = "1"
+reqwest = "0.11"
 serde = {version = "1.0.196", features = ["derive"]}
 tokio = {version = "1", features = ["full"]}
+tracked = "0.5"
 turbosql = {git = "https://github.com/trevyn/turbosql", branch = "main"}
 
 # Optimize all dependencies even in debug builds:

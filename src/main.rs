@@ -23,6 +23,7 @@ use std::thread;
 use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 
 mod audiofile;
+mod self_update;
 mod session;
 
 enum Word {
@@ -674,6 +675,7 @@ impl ColoredText {
 async fn main() -> eframe::Result<()> {
 	env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+	self_update::self_update().await.ok();
 	// let rt = tokio::runtime::Runtime::new().expect("Unable to create Runtime");
 
 	// // Enter the runtime so that `tokio::spawn` is available immediately.

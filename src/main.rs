@@ -9,7 +9,13 @@ use cpal::Sample;
 use crossbeam::channel::RecvError;
 use deepgram::transcription::live::{Alternatives, Channel, Word as LiveWord};
 use deepgram::transcription::prerecorded::response::Word as PrerecordedWord;
-use deepgram::{Deepgram, DeepgramError};
+use deepgram::{
+	transcription::prerecorded::{
+		audio_source::AudioSource,
+		options::{Language, Options},
+	},
+	Deepgram, DeepgramError,
+};
 use egui::*;
 use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
 use futures::stream::StreamExt;
@@ -20,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::sync::Mutex;
 use std::thread;
+use tokio::fs::File;
 use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 
 mod audiofile;
@@ -277,15 +284,6 @@ impl eframe::App for App {
 					let samples = session.samples();
 
 					tokio::spawn(async move {
-						use deepgram::{
-							transcription::prerecorded::{
-								audio_source::AudioSource,
-								options::{Language, Options},
-							},
-							Deepgram, DeepgramError,
-						};
-						use tokio::fs::File;
-
 						// clear transcript
 						TRANSCRIPT_FINAL.lock().unwrap().clear();
 
@@ -393,6 +391,49 @@ impl eframe::App for App {
 					}
 				});
 			}
+
+			use rfd::AsyncFileDialog;
+
+			if ui.button("import audio file").clicked() {
+				tokio::spawn(async {
+					use rfd::AsyncFileDialog;
+
+					let file = AsyncFileDialog::new().pick_file().await;
+
+					let file = file.unwrap().read().await;
+
+					let source = AudioSource::from_buffer_with_mime_type(file, "audio/aac");
+
+					let options = Options::builder()
+						.punctuate(false)
+						.diarize(true)
+						.model(deepgram::transcription::prerecorded::options::Model::CustomId(
+							"nova-2-meeting".to_string(),
+						))
+						.build();
+
+					let deepgram_api_key =
+						env::var("DEEPGRAM_API_KEY").expect("DEEPGRAM_API_KEY environmental variable");
+
+					let dg_client = Deepgram::new(&deepgram_api_key);
+
+					eprintln!("transcribing...");
+					let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
+					eprintln!("complete.");
+					dbg!(&response);
+
+					let transcript = &response.results.channels[0].alternatives[0].transcript;
+					println!("{}", transcript);
+
+					let words = &response.results.channels[0].alternatives[0].words;
+
+					for word in words.iter() {
+						TRANSCRIPT_FINAL.lock().unwrap().push(Some(Word::Prerecorded(word.clone())));
+					}
+
+					// dbg!(file.len());
+				});
+			};
 
 			if ui.button("dump").clicked() {
 				println!("{}", self.get_transcript());

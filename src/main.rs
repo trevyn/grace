@@ -243,7 +243,7 @@ impl MyThings for Ui {
 
 impl eframe::App for App {
 	fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-		ctx.request_repaint();
+		ctx.request_repaint_after(std::time::Duration::from_millis(500));
 
 		// self.sessions = session::Session::calculate_sessions();
 

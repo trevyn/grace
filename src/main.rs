@@ -2,7 +2,8 @@
 #![allow(unused_imports)]
 // #![feature(let_chains)]
 
-use async_openai::types::ChatCompletionRequestSystemMessageArgs;
+use async_openai::types::ChatCompletionRequestMessage;
+use async_openai::types::Role::{self, *};
 use bytes::{BufMut, Bytes, BytesMut};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
@@ -57,11 +58,18 @@ static TRANSCRIPT: Lazy<Mutex<Vec<Option<LiveWord>>>> = Lazy::new(Default::defau
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 
-#[derive(Default)]
-struct WheelWindow {
-	system: String,
-	prompt: String,
-	completion: String,
+#[derive(Clone)]
+struct ChatMessage {
+	role: Role,
+	content: String,
+}
+
+struct WheelWindow(Vec<ChatMessage>);
+
+impl Default for WheelWindow {
+	fn default() -> Self {
+		Self(vec![ChatMessage { role: User, content: String::new() }])
+	}
 }
 
 static WHEEL_WINDOWS: Lazy<Mutex<Vec<WheelWindow>>> = Lazy::new(Default::default);
@@ -500,71 +508,67 @@ impl eframe::App for App {
 		let len = WHEEL_WINDOWS.lock().unwrap().len();
 		for i in 0..len {
 			egui::Window::new(format!("wheel {}", i)).show(ctx, |ui| {
-				ui.add(
-					TextEdit::multiline(&mut WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().system)
-						.font(FontId::new(20.0, FontFamily::Monospace))
-						.desired_width(f32::INFINITY),
-				);
-				ui.label("[transcript goes here]");
-				ui.add(
-					TextEdit::multiline(&mut WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().prompt)
-						.font(FontId::new(20.0, FontFamily::Monospace))
-						.desired_width(f32::INFINITY),
-				);
-				if do_all || ui.button("do it").clicked() {
-					{
-						WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().completion.clear();
+				ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+					if ui.button("copy all to clipboard").clicked() {
+						let mut text = self.get_transcript();
+						text.push_str("\n");
+
+						for entry in WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().0.iter() {
+							text.push_str(&format!("[{}]: {}\n", entry.role, entry.content));
+						}
+
+						ui.output_mut(|o| o.copied_text = text);
 					}
-					// let system = wheelwindow.system.clone();
-					// let prompt = wheelwindow.prompt.clone();
-					let transcript = self.get_transcript();
-					tokio::spawn(async move {
-						run_openai(i, transcript).await.unwrap();
-					});
-				};
-				// ui.code_editor(&mut self.editor_text).font_size(0.0);
-				ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-					ui.label(
-						egui::RichText::new(WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().completion.as_str())
-							.font(FontId::new(20.0, FontFamily::Monospace)),
-					);
+					ui.label("[transcript goes here]");
+					let mut wheel_windows = WHEEL_WINDOWS.lock().unwrap();
+					let mut do_it = false;
+					for (j, entry) in wheel_windows.get_mut(i).unwrap().0.iter_mut().enumerate() {
+						let id = Id::new(i * 1000 + j);
+						let editor_has_focus = ui.ctx().memory(|m| m.has_focus(id));
+						let events = ui.input(|i| i.events.clone());
+						if editor_has_focus
+							&& events.iter().any(|evt| {
+								matches!(evt,
+									Event::Key { key, modifiers, pressed, .. }
+									if *key == Key::Enter && *pressed && modifiers.command
+								)
+							})
+						{
+							ui.ctx().memory_mut(|m| m.surrender_focus(id));
+							do_it = true;
+						}
+
+						ui.horizontal(|ui| {
+							ui.radio_value(&mut entry.role, User, "user");
+							ui.radio_value(&mut entry.role, System, "system");
+							ui.radio_value(&mut entry.role, Assistant, "assistant");
+							ui.add(
+								TextEdit::multiline(&mut entry.content)
+									.id(id)
+									.font(FontId::new(20.0, FontFamily::Monospace))
+									.desired_width(f32::INFINITY),
+							);
+							// if ui.button("remove").clicked() {
+							// 	WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().0.remove(j);
+							// }
+						});
+					}
+					if do_it || ui.button("do it").clicked() {
+						let ref mut messages = wheel_windows.get_mut(i).unwrap().0;
+						let orig_messages = messages.clone();
+						messages.push(ChatMessage { role: Assistant, content: String::new() });
+						messages.push(ChatMessage { role: User, content: String::new() });
+						ui.ctx().memory_mut(|m| m.request_focus(Id::new((i * 1000) + messages.len() - 1)));
+						let id = messages.len() - 2;
+						let transcript = self.get_transcript();
+						tokio::spawn(async move {
+							run_openai(orig_messages, i, id, transcript).await.unwrap();
+						});
+					}
 				});
-				// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
-				// );
 			});
 		}
 
-		// egui::Window::new("wheel 1").show(ctx, |ui| {
-		// 	ui.add(
-		// 		TextEdit::multiline(&mut self.system_text)
-		// 			.font(FontId::new(20.0, FontFamily::Monospace))
-		// 			.desired_width(f32::INFINITY),
-		// 	);
-		// 	ui.label("[transcript goes here]");
-		// 	ui.add(
-		// 		TextEdit::multiline(&mut self.prompt_text)
-		// 			.font(FontId::new(20.0, FontFamily::Monospace))
-		// 			.desired_width(f32::INFINITY),
-		// 	);
-		// 	if ui.button("do it").clicked() {
-		// 		OPENAI.lock().unwrap().clear();
-		// 		let system = self.system_text.clone();
-		// 		let prompt = self.prompt_text.clone();
-		// 		let transcript = self.get_transcript();
-		// 		tokio::spawn(async {
-		// 			run_openai(system, transcript, prompt).await.unwrap();
-		// 		});
-		// 	};
-		// 	// ui.code_editor(&mut self.editor_text).font_size(0.0);
-		// 	ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-		// 		ui.label(
-		// 			egui::RichText::new(OPENAI.lock().unwrap().as_str())
-		// 				.font(FontId::new(20.0, FontFamily::Monospace)),
-		// 		);
-		// 	});
-		// 	// 	Label::new(OPENAI.lock().unwrap().as_str()).size(FontId::new(20.0, FontFamily::Monospace)),
-		// 	// );
-		// });
 		egui::Window::new("Transcript").show(ctx, |ui| {
 			ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
 				let words = TRANSCRIPT_FINAL.lock().unwrap();
@@ -596,7 +600,7 @@ impl eframe::App for App {
 			});
 			// ui.allocate_space(ui.available_size());
 		});
-		CentralPanel::default().show(ctx, |ui| {});
+		CentralPanel::default().show(ctx, |_ui| {});
 	}
 }
 
@@ -838,29 +842,58 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 }
 
 pub(crate) async fn run_openai(
+	messages: Vec<ChatMessage>,
 	i: usize,
+	j: usize,
 	transcript: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	use std::io::{stdout, Write};
 
-	use async_openai::types::ChatCompletionRequestUserMessageArgs;
 	use async_openai::{types::CreateChatCompletionRequestArgs, Client};
 	use futures::StreamExt;
 
 	let client = Client::new();
 
-	let system = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().system.clone();
-	let prompt = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().prompt.clone();
+	// let messages = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().0.clone();
+
+	let mut messages = messages
+		.into_iter()
+		.map(|m| match m.role {
+			System => async_openai::types::ChatCompletionRequestSystemMessageArgs::default()
+				.content(m.content)
+				.build()
+				.unwrap()
+				.into(),
+			User => async_openai::types::ChatCompletionRequestUserMessageArgs::default()
+				.content(m.content)
+				.build()
+				.unwrap()
+				.into(),
+			Assistant => async_openai::types::ChatCompletionRequestAssistantMessageArgs::default()
+				.content(m.content)
+				.build()
+				.unwrap()
+				.into(),
+			_ => panic!("invalid role"),
+		})
+		.collect::<Vec<ChatCompletionRequestMessage>>();
+
+	messages.insert(
+		0,
+		async_openai::types::ChatCompletionRequestUserMessageArgs::default()
+			.content(transcript)
+			.build()
+			.unwrap()
+			.into(),
+	);
+
+	dbg!(&messages);
 
 	let request = CreateChatCompletionRequestArgs::default()
 		.model("gpt-4-0125-preview")
 		// .model("gpt-3.5-turbo-0125")
 		.max_tokens(4096u16)
-		.messages([
-			ChatCompletionRequestSystemMessageArgs::default().content(system).build()?.into(),
-			ChatCompletionRequestUserMessageArgs::default().content(transcript).build()?.into(),
-			ChatCompletionRequestUserMessageArgs::default().content(prompt).build()?.into(),
-		])
+		.messages(messages)
 		.build()?;
 
 	let mut stream = client.chat().create_stream(request).await?;
@@ -870,9 +903,16 @@ pub(crate) async fn run_openai(
 			Ok(response) => {
 				response.choices.iter().for_each(|chat_choice| {
 					if let Some(ref content) = chat_choice.delta.content {
-						// print!("{}", content);
-						WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().completion.push_str(content);
-						// OPENAI.lock().unwrap().push_str(content);
+						WHEEL_WINDOWS
+							.lock()
+							.unwrap()
+							.get_mut(i)
+							.unwrap()
+							.0
+							.get_mut(j)
+							.unwrap()
+							.content
+							.push_str(content);
 					}
 				});
 			}

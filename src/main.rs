@@ -271,6 +271,8 @@ impl eframe::App for App {
 		let mut do_all = false;
 
 		SidePanel::left("left_panel").show(ctx, |ui| {
+			ui.label(option_env!("BUILD_ID").unwrap_or("DEV"));
+
 			// let mut setting = Setting::get("openai_key");
 			// ui.label("openai key:");
 			// ui

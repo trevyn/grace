@@ -310,7 +310,18 @@ impl eframe::App for App {
 							.build();
 
 						eprintln!("transcribing...");
-						let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
+						let response: deepgram::transcription::prerecorded::response::Response = dg_client
+							.transcription()
+							.make_prerecorded_request_builder(source, &options)
+							.query(&[("filler_words", "true")])
+							.send()
+							.await
+							.unwrap()
+							.json()
+							.await
+							.unwrap();
+
+						// let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
 						eprintln!("complete.");
 						// dbg!(&response);
 

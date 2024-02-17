@@ -231,6 +231,7 @@ where
             // pairs.append_pair("version", "beta");
             pairs.append_pair("diarize", "true");
             pairs.append_pair("interim_results", "true");
+            pairs.append_pair("filler_words", "true");
             pairs.append_pair("utterance_end_ms", "1000");
             pairs.append_pair("endpointing", "500");
             pairs.append_pair("keywords", "scarlett:1.0");

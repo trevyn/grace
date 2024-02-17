@@ -310,7 +310,7 @@ impl eframe::App for App {
 						eprintln!("transcribing...");
 						let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
 						eprintln!("complete.");
-						dbg!(&response);
+						// dbg!(&response);
 
 						let transcript = &response.results.channels[0].alternatives[0].transcript;
 						println!("{}", transcript);
@@ -392,15 +392,9 @@ impl eframe::App for App {
 				});
 			}
 
-			use rfd::AsyncFileDialog;
-
 			if ui.button("import audio file").clicked() {
 				tokio::spawn(async {
-					use rfd::AsyncFileDialog;
-
-					let file = AsyncFileDialog::new().pick_file().await;
-
-					let file = file.unwrap().read().await;
+					let file = rfd::AsyncFileDialog::new().pick_file().await.unwrap().read().await;
 
 					let source = AudioSource::from_buffer_with_mime_type(file, "audio/aac");
 
@@ -418,20 +412,15 @@ impl eframe::App for App {
 					let dg_client = Deepgram::new(&deepgram_api_key);
 
 					eprintln!("transcribing...");
-					let response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
+					let mut response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
 					eprintln!("complete.");
-					dbg!(&response);
 
-					let transcript = &response.results.channels[0].alternatives[0].transcript;
-					println!("{}", transcript);
-
-					let words = &response.results.channels[0].alternatives[0].words;
-
-					for word in words.iter() {
-						TRANSCRIPT_FINAL.lock().unwrap().push(Some(Word::Prerecorded(word.clone())));
-					}
-
-					// dbg!(file.len());
+					TRANSCRIPT_FINAL.lock().unwrap().extend(
+						response.results.channels[0].alternatives[0]
+							.words
+							.drain(..)
+							.map(|w| Some(Word::Prerecorded(w))),
+					);
 				});
 			};
 

@@ -424,8 +424,8 @@ impl eframe::App for App {
 				});
 			};
 
-			if ui.button("dump").clicked() {
-				println!("{}", self.get_transcript());
+			if ui.button("copy transcript to clipboard").clicked() {
+				ui.output_mut(|o| o.copied_text = self.get_transcript());
 			};
 
 			if ui.button("add window").clicked() {

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-#![allow(unused_imports)]
+#![allow(unused_imports, dead_code)]
 // #![feature(let_chains)]
 
 use async_openai::types::ChatCompletionRequestMessage;
@@ -522,6 +522,7 @@ impl eframe::App for App {
 					ui.label("[transcript goes here]");
 					let mut wheel_windows = WHEEL_WINDOWS.lock().unwrap();
 					let mut do_it = false;
+					let mut do_it_j = 9999;
 					for (j, entry) in wheel_windows.get_mut(i).unwrap().0.iter_mut().enumerate() {
 						let id = Id::new(i * 1000 + j);
 						let editor_has_focus = ui.ctx().memory(|m| m.has_focus(id));
@@ -536,6 +537,7 @@ impl eframe::App for App {
 						{
 							ui.ctx().memory_mut(|m| m.surrender_focus(id));
 							do_it = true;
+							do_it_j = j;
 						}
 
 						ui.horizontal(|ui| {
@@ -555,6 +557,7 @@ impl eframe::App for App {
 					}
 					if do_it || ui.button("do it").clicked() {
 						let ref mut messages = wheel_windows.get_mut(i).unwrap().0;
+						messages.truncate(do_it_j + 1);
 						let orig_messages = messages.clone();
 						messages.push(ChatMessage { role: Assistant, content: String::new() });
 						messages.push(ChatMessage { role: User, content: String::new() });
@@ -887,7 +890,7 @@ pub(crate) async fn run_openai(
 			.into(),
 	);
 
-	dbg!(&messages);
+	// dbg!(&messages);
 
 	let request = CreateChatCompletionRequestArgs::default()
 		.model("gpt-4-0125-preview")

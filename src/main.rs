@@ -732,6 +732,8 @@ impl ColoredText {
 async fn main() -> eframe::Result<()> {
 	env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+	eprintln!("database at {:?}", turbosql::db_path());
+
 	self_update::self_update().await.ok();
 	// let rt = tokio::runtime::Runtime::new().expect("Unable to create Runtime");
 
@@ -769,18 +771,16 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 
 		dbg!(&config);
 
+		let num_channels = config.channels() as usize;
+
 		let stream = match config.sample_format() {
 			cpal::SampleFormat::F32 => device
 				.build_input_stream(
 					&config.into(),
 					move |data: &[f32], _: &_| {
-						// dbg!(data.len());
-						let mut bytes = BytesMut::with_capacity(data.len() * 4);
-						for sample in data {
-							bytes.put_f32_le(*sample);
-						}
-						let mut bytes = BytesMut::with_capacity(data.len() * 2);
-						for sample in data {
+						let mut bytes =
+							BytesMut::with_capacity((data.len() * std::mem::size_of::<i16>()) / num_channels);
+						for sample in data.iter().step_by(num_channels) {
 							// if *sample > 0.5 {
 							// 	dbg!(sample);
 							// }

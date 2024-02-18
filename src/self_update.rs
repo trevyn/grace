@@ -13,7 +13,7 @@ pub(crate) async fn self_update() -> Result<(), Box<dyn std::error::Error>> {
 	let res = reqwest::Client::builder()
 		.redirect(reqwest::redirect::Policy::none())
 		.build()?
-		.get("https://github.com/trevyn/scarlett/releases/latest/download/scarlett.zip")
+		.get("https://github.com/trevyn/scarlett/releases/latest/download/scarlett")
 		.send()
 		.await?;
 
@@ -35,12 +35,13 @@ pub(crate) async fn self_update() -> Result<(), Box<dyn std::error::Error>> {
 	let res = reqwest::get(location).await?;
 	let total_size: usize = res.content_length()?.try_into()?;
 
-	// if total_size < 10_000_000 {
-	// 	Err(format!(
-	// 		"Not updating; new release {} is unexpectedly small: {} bytes.",
-	// 		new_version, total_size
-	// 	))?;
-	// }
+	if total_size < 10_000_000 {
+		eprintln!(
+			"Not updating; new release {} is unexpectedly small: {} bytes.",
+			new_version, total_size
+		);
+		return Ok(());
+	}
 
 	// if total_size > 50_000_000 {
 	// 	Err(format!(

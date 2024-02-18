@@ -216,6 +216,17 @@ impl App {
 		let mut s = Self::default();
 
 		s.sessions = session::Session::calculate_sessions();
+
+		let ctx_cloned = cc.egui_ctx.clone();
+
+		tokio::spawn(async move {
+			let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+			loop {
+				interval.tick().await;
+				ctx_cloned.request_repaint();
+			}
+		});
+
 		// dbg!(&sessions);
 		// let session = sessions.first().unwrap();
 		// dbg!(session.duration_ms());
@@ -251,10 +262,6 @@ impl MyThings for Ui {
 
 impl eframe::App for App {
 	fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-		ctx.request_repaint_after(std::time::Duration::from_millis(500));
-
-		// self.sessions = session::Session::calculate_sessions();
-
 		// ctx.input(|i| {
 		// 	if i.key_pressed(Key::ArrowDown) {
 		// 		self.line_selected =
@@ -564,8 +571,9 @@ impl eframe::App for App {
 						ui.ctx().memory_mut(|m| m.request_focus(Id::new((i * 1000) + messages.len() - 1)));
 						let id = messages.len() - 2;
 						let transcript = self.get_transcript();
+						let ctx_cloned = ctx.clone();
 						tokio::spawn(async move {
-							run_openai(orig_messages, i, id, transcript).await.unwrap();
+							run_openai(&ctx_cloned, orig_messages, i, id, transcript).await.unwrap();
 						});
 					}
 				});
@@ -845,6 +853,7 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 }
 
 pub(crate) async fn run_openai(
+	ctx: &Context,
 	messages: Vec<ChatMessage>,
 	i: usize,
 	j: usize,
@@ -916,6 +925,7 @@ pub(crate) async fn run_openai(
 							.unwrap()
 							.content
 							.push_str(content);
+						ctx.request_repaint();
 					}
 				});
 			}

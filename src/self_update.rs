@@ -55,13 +55,13 @@ pub(crate) async fn self_update() -> Result<(), Box<dyn std::error::Error>> {
 
 	while let Some(item) = stream.next().await {
 		bytes.extend_from_slice(&item?);
-		// yield format!(
-		// 	"downloading update {} {}% {}/{}...",
-		// 	new_version,
-		// 	bytes.len() * 100 / total_size,
-		// 	bytes.len(),
-		// 	total_size
-		// );
+		eprintln!(
+			"downloading update {} {}% {}/{}...",
+			new_version,
+			bytes.len() * 100 / total_size,
+			bytes.len(),
+			total_size
+		);
 	}
 
 	let bytes = bytes;

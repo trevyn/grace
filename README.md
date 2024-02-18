@@ -10,8 +10,8 @@ You'll need:
 In Terminal:
 
 ```
-wget https://github.com/trevyn/scarlett/releases/latest/download/scarlett.zip
-unzip scarlett.zip
+curl -O https://github.com/trevyn/scarlett/releases/latest/download/scarlett
+chmod +x scarlett
 xattr -dr com.apple.quarantine scarlett
 OPENAI_API_KEY=sk-YOUR-OPENAI-API-KEY-HERE DEEPGRAM_API_KEY=YOUR-DEEPGRAM-API-KEY-HERE ./scarlett
 ```

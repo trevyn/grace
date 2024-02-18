@@ -48,8 +48,8 @@ jobs:
       - run: |
           mv target/release/scarlett scarlett
 
-      - run: zip -9 scarlett.zip scarlett
+      # - run: zip -9 scarlett.zip scarlett
 
-      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett.zip
+      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

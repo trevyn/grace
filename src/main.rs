@@ -19,7 +19,7 @@ use deepgram::{
 };
 use egui::*;
 use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
-use futures::stream::StreamExt;
+use futures::stream::StreamExt as _;
 use futures::SinkExt;
 use once_cell::sync::Lazy;
 use poll_promise::Promise;
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::sync::Mutex;
 use std::thread;
+use stream_cancel::{StreamExt as _, Trigger, Tripwire};
 use tokio::fs::File;
 use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
 
@@ -175,6 +176,8 @@ pub struct App {
 	system_text: String,
 	prompt_text: String,
 
+	#[serde(skip)]
+	trigger: Option<Trigger>,
 	#[serde(skip)]
 	sessions: Vec<session::Session>,
 	#[serde(skip)]
@@ -572,8 +575,10 @@ impl eframe::App for App {
 						let id = messages.len() - 2;
 						let transcript = self.get_transcript();
 						let ctx_cloned = ctx.clone();
+						let (trigger, tripwire) = Tripwire::new();
+						self.trigger = Some(trigger);
 						tokio::spawn(async move {
-							run_openai(&ctx_cloned, orig_messages, i, id, transcript).await.unwrap();
+							run_openai(&ctx_cloned, tripwire, orig_messages, i, id, transcript).await.unwrap();
 						});
 					}
 				});
@@ -786,40 +791,40 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 							// }
 							bytes.put_i16_le(sample.to_sample::<i16>());
 						}
-						sync_tx.send(bytes.freeze()).unwrap();
+						sync_tx.send(bytes.freeze()).ok();
 					},
 					|_| panic!(),
 					None,
 				)
 				.unwrap(),
-			cpal::SampleFormat::I16 => device
-				.build_input_stream(
-					&config.into(),
-					move |data: &[i16], _: &_| {
-						let mut bytes = BytesMut::with_capacity(data.len() * 2);
-						for sample in data {
-							bytes.put_i16_le(*sample);
-						}
-						sync_tx.send(bytes.freeze()).unwrap();
-					},
-					|_| panic!(),
-					None,
-				)
-				.unwrap(),
-			cpal::SampleFormat::U16 => device
-				.build_input_stream(
-					&config.into(),
-					move |data: &[u16], _: &_| {
-						let mut bytes = BytesMut::with_capacity(data.len() * 2);
-						for sample in data {
-							bytes.put_i16_le(sample.to_sample::<i16>());
-						}
-						sync_tx.send(bytes.freeze()).unwrap();
-					},
-					|_| panic!(),
-					None,
-				)
-				.unwrap(),
+			// cpal::SampleFormat::I16 => device
+			// 	.build_input_stream(
+			// 		&config.into(),
+			// 		move |data: &[i16], _: &_| {
+			// 			let mut bytes = BytesMut::with_capacity(data.len() * 2);
+			// 			for sample in data {
+			// 				bytes.put_i16_le(*sample);
+			// 			}
+			// 			sync_tx.send(bytes.freeze()).unwrap();
+			// 		},
+			// 		|_| panic!(),
+			// 		None,
+			// 	)
+			// 	.unwrap(),
+			// cpal::SampleFormat::U16 => device
+			// 	.build_input_stream(
+			// 		&config.into(),
+			// 		move |data: &[u16], _: &_| {
+			// 			let mut bytes = BytesMut::with_capacity(data.len() * 2);
+			// 			for sample in data {
+			// 				bytes.put_i16_le(sample.to_sample::<i16>());
+			// 			}
+			// 			sync_tx.send(bytes.freeze()).unwrap();
+			// 		},
+			// 		|_| panic!(),
+			// 		None,
+			// 	)
+			// 	.unwrap(),
 			_ => panic!("unsupported sample format"),
 		};
 
@@ -854,19 +859,16 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 
 pub(crate) async fn run_openai(
 	ctx: &Context,
+	tripwire: Tripwire,
 	messages: Vec<ChatMessage>,
 	i: usize,
 	j: usize,
 	transcript: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-	use std::io::{stdout, Write};
-
 	use async_openai::{types::CreateChatCompletionRequestArgs, Client};
 	use futures::StreamExt;
 
 	let client = Client::new();
-
-	// let messages = WHEEL_WINDOWS.lock().unwrap().get(i).unwrap().0.clone();
 
 	let mut messages = messages
 		.into_iter()
@@ -908,7 +910,7 @@ pub(crate) async fn run_openai(
 		.messages(messages)
 		.build()?;
 
-	let mut stream = client.chat().create_stream(request).await?;
+	let mut stream = client.chat().create_stream(request).await?.take_until_if(tripwire);
 
 	while let Some(result) = stream.next().await {
 		match result {
@@ -933,7 +935,6 @@ pub(crate) async fn run_openai(
 				panic!("error: {err}");
 			}
 		}
-		// stdout().flush()?;
 	}
 
 	Ok(())

@@ -62,6 +62,11 @@ static TRANSCRIPT: Lazy<Mutex<Vec<Option<LiveWord>>>> = Lazy::new(Default::defau
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
 static COMPLETION: Lazy<Mutex<String>> = Lazy::new(Default::default);
+static COMPLETION_PROMPT: Lazy<Mutex<String>> = Lazy::new(|| {
+	Mutex::new(String::from(
+		"For the personal conversational transcript above, here is a coaching prompt:",
+	))
+});
 
 #[derive(Clone)]
 struct ChatMessage {
@@ -179,6 +184,7 @@ pub struct App {
 	speaker_names: Vec<String>,
 	system_text: String,
 	prompt_text: String,
+	completion_prompt: String,
 
 	#[serde(skip)]
 	debounce_tx: Option<Sender<String>>,
@@ -229,6 +235,7 @@ impl App {
 		let s = Self {
 			debounce_tx: Some(debounce_tx),
 			sessions: session::Session::calculate_sessions(),
+			completion_prompt: COMPLETION_PROMPT.lock().unwrap().clone(),
 			..Default::default()
 		};
 
@@ -270,10 +277,7 @@ impl App {
 							let (t, tripwire) = Tripwire::new();
 							_trigger = Some(t);
 							eprintln!("{}", string);
-							let string = format!(
-								"For the personal conversational transcript above, here is a coaching prompt: {}",
-								string
-							);
+							let string = format!("{} {}", COMPLETION_PROMPT.lock().unwrap(), string);
 							let ctx = ctx.clone();
 							tokio::spawn(async move {
 								COMPLETION.lock().unwrap().clear();
@@ -576,6 +580,19 @@ impl eframe::App for App {
 					});
 				}
 			});
+		});
+
+		egui::Window::new("").show(ctx, |ui| {
+			if ui
+				.add(
+					TextEdit::multiline(&mut self.completion_prompt)
+						.font(FontId::new(20.0, FontFamily::Monospace))
+						.desired_width(f32::INFINITY),
+				)
+				.changed()
+			{
+				*COMPLETION_PROMPT.lock().unwrap() = self.completion_prompt.clone();
+			}
 		});
 
 		let len = WHEEL_WINDOWS.lock().unwrap().len();

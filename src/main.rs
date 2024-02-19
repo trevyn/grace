@@ -17,16 +17,19 @@ use deepgram::{
 	},
 	Deepgram, DeepgramError,
 };
+use egui::text::LayoutJob;
 use egui::*;
-use futures::channel::mpsc::{self, Receiver as FuturesReceiver};
+use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::stream::StreamExt as _;
 use futures::SinkExt;
 use once_cell::sync::Lazy;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
-use std::env;
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
+use std::{env, string};
 use stream_cancel::{StreamExt as _, Trigger, Tripwire};
 use tokio::fs::File;
 use turbosql::{execute, now_ms, select, update, Blob, Turbosql};
@@ -58,6 +61,7 @@ impl Word {
 static TRANSCRIPT: Lazy<Mutex<Vec<Option<LiveWord>>>> = Lazy::new(Default::default);
 static TRANSCRIPT_FINAL: Lazy<Mutex<Vec<Option<Word>>>> = Lazy::new(Default::default);
 static DURATION: Lazy<Mutex<f64>> = Lazy::new(Default::default);
+static COMPLETION: Lazy<Mutex<String>> = Lazy::new(Default::default);
 
 #[derive(Clone)]
 struct ChatMessage {
@@ -177,6 +181,10 @@ pub struct App {
 	prompt_text: String,
 
 	#[serde(skip)]
+	debounce_tx: Option<Sender<String>>,
+	#[serde(skip)]
+	gpt_3_trigger: Option<Trigger>,
+	#[serde(skip)]
 	trigger: Option<Trigger>,
 	#[serde(skip)]
 	sessions: Vec<session::Session>,
@@ -216,17 +224,72 @@ impl App {
 
 		egui_extras::install_image_loaders(&cc.egui_ctx);
 
-		let mut s = Self::default();
+		let (debounce_tx, mut debounce_rx) = mpsc::channel(10);
 
-		s.sessions = session::Session::calculate_sessions();
+		let s = Self {
+			debounce_tx: Some(debounce_tx),
+			sessions: session::Session::calculate_sessions(),
+			..Default::default()
+		};
 
 		let ctx_cloned = cc.egui_ctx.clone();
 
 		tokio::spawn(async move {
-			let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+			let mut interval = tokio::time::interval(Duration::from_millis(100));
 			loop {
 				interval.tick().await;
 				ctx_cloned.request_repaint();
+			}
+		});
+
+		let ctx = cc.egui_ctx.clone();
+
+		// Listen for events
+		tokio::spawn(async move {
+			let duration = Duration::from_millis(300);
+			let mut keys_pressed = false;
+			let mut string = String::new();
+			let mut _trigger = None;
+
+			loop {
+				match tokio::time::timeout(duration, debounce_rx.next()).await {
+					Ok(Some(s)) => {
+						// keyboard activity
+						_trigger = None;
+						COMPLETION.lock().unwrap().clear();
+						string = s;
+						keys_pressed = true;
+					}
+					Ok(None) => {
+						eprintln!("Debounce finished");
+						break;
+					}
+					Err(_) => {
+						if keys_pressed && !string.is_empty() {
+							// eprintln!("{:?} since keyboard activity: {}", duration, &string);
+							let (t, tripwire) = Tripwire::new();
+							_trigger = Some(t);
+							eprintln!("{}", string);
+							let string = format!(
+								"For the personal conversational transcript above, here is a coaching prompt: {}",
+								string
+							);
+							let ctx = ctx.clone();
+							tokio::spawn(async move {
+								COMPLETION.lock().unwrap().clear();
+								let ctx = ctx.clone();
+								run_openai_completion(tripwire, string, move |content| {
+									// eprint!("{}", content);
+									COMPLETION.lock().unwrap().push_str(&content);
+									ctx.request_repaint();
+								})
+								.await
+								.ok();
+							});
+							keys_pressed = false;
+						}
+					}
+				}
 			}
 		});
 
@@ -536,16 +599,22 @@ impl eframe::App for App {
 					for (j, entry) in wheel_windows.get_mut(i).unwrap().0.iter_mut().enumerate() {
 						let id = Id::new(i * 1000 + j);
 						let editor_has_focus = ui.ctx().memory(|m| m.has_focus(id));
-						let events = ui.input(|i| i.events.clone());
+
+						if editor_has_focus && ui.input_mut(|i| i.consume_key(Modifiers::default(), Key::Tab)) {
+							entry.content.push_str(COMPLETION.lock().unwrap().as_str().split('\n').next().unwrap());
+							COMPLETION.lock().unwrap().clear();
+							if let Some(mut state) = egui::TextEdit::load_state(ctx, id) {
+								let ccursor = egui::text::CCursor::new(entry.content.chars().count());
+								state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
+								state.store(ctx, id);
+								// ui.ctx().memory().request_focus(text_edit_id); // give focus back to the `TextEdit`.
+							}
+						}
 						if editor_has_focus
-							&& events.iter().any(|evt| {
-								matches!(evt,
-									Event::Key { key, modifiers, pressed, .. }
-									if *key == Key::Enter && *pressed && modifiers.command
-								)
-							})
+							&& ui
+								.input_mut(|i| i.consume_key(Modifiers { command: true, ..Default::default() }, Key::Enter))
 						{
-							ui.ctx().memory_mut(|m| m.surrender_focus(id));
+							COMPLETION.lock().unwrap().clear();
 							do_it = true;
 							do_it_j = j;
 						}
@@ -554,18 +623,61 @@ impl eframe::App for App {
 							ui.radio_value(&mut entry.role, User, "user");
 							ui.radio_value(&mut entry.role, System, "system");
 							ui.radio_value(&mut entry.role, Assistant, "assistant");
-							ui.add(
-								TextEdit::multiline(&mut entry.content)
-									.id(id)
-									.font(FontId::new(20.0, FontFamily::Monospace))
-									.desired_width(f32::INFINITY),
-							);
+
+							let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+								let mut job = LayoutJob::default();
+								let completion = if editor_has_focus {
+									let string = COMPLETION.lock().unwrap();
+									string.split('\n').next().unwrap().to_owned()
+								} else {
+									String::new()
+								};
+								job.append(
+									string,
+									0.0,
+									TextFormat {
+										font_id: FontId::new(20.0, FontFamily::Monospace),
+										color: Color32::WHITE,
+										..Default::default()
+									},
+								);
+								job.append(
+									&completion,
+									0.0,
+									TextFormat {
+										font_id: FontId::new(20.0, FontFamily::Monospace),
+										color: Color32::DARK_GRAY,
+										..Default::default()
+									},
+								);
+								job.wrap.max_width = wrap_width;
+								ui.fonts(|f| f.layout_job(job))
+							};
+
+							if ui
+								.add(
+									TextEdit::multiline(&mut entry.content)
+										.id(id)
+										.lock_focus(true)
+										// .font(FontId::new(20.0, FontFamily::Monospace))
+										.desired_width(f32::INFINITY)
+										.layouter(&mut layouter),
+								)
+								.changed()
+							{
+								// eprintln!("{}", entry.content);
+								let debounce_tx = self.debounce_tx.clone();
+								let entry_content = entry.content.clone();
+								tokio::spawn(async move {
+									debounce_tx.unwrap().send(entry_content).await.unwrap();
+								});
+							};
 							// if ui.button("remove").clicked() {
 							// 	WHEEL_WINDOWS.lock().unwrap().get_mut(i).unwrap().0.remove(j);
 							// }
 						});
 					}
-					if do_it || ui.button("do it").clicked() {
+					if do_it {
 						let ref mut messages = wheel_windows.get_mut(i).unwrap().0;
 						messages.truncate(do_it_j + 1);
 						let orig_messages = messages.clone();
@@ -578,7 +690,21 @@ impl eframe::App for App {
 						let (trigger, tripwire) = Tripwire::new();
 						self.trigger = Some(trigger);
 						tokio::spawn(async move {
-							run_openai(&ctx_cloned, tripwire, orig_messages, i, id, transcript).await.unwrap();
+							run_openai(GPT_4, tripwire, orig_messages, transcript, move |content| {
+								WHEEL_WINDOWS
+									.lock()
+									.unwrap()
+									.get_mut(i)
+									.unwrap()
+									.0
+									.get_mut(id)
+									.unwrap()
+									.content
+									.push_str(content);
+								ctx_cloned.request_repaint();
+							})
+							.await
+							.unwrap();
 						});
 					}
 				});
@@ -759,7 +885,7 @@ async fn main() -> eframe::Result<()> {
 	)
 }
 
-fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
+fn microphone_as_stream() -> Receiver<Result<Bytes, RecvError>> {
 	let (sync_tx, sync_rx) = crossbeam::channel::unbounded();
 	let (mut async_tx, async_rx) = mpsc::channel(1);
 
@@ -857,13 +983,15 @@ fn microphone_as_stream() -> FuturesReceiver<Result<Bytes, RecvError>> {
 	async_rx
 }
 
+const GPT_3_5: &str = "gpt-3.5-turbo-0125";
+const GPT_4: &str = "gpt-4-0125-preview";
+
 pub(crate) async fn run_openai(
-	ctx: &Context,
+	model: &str,
 	tripwire: Tripwire,
 	messages: Vec<ChatMessage>,
-	i: usize,
-	j: usize,
 	transcript: String,
+	callback: impl Fn(&String) + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	use async_openai::{types::CreateChatCompletionRequestArgs, Client};
 	use futures::StreamExt;
@@ -892,20 +1020,21 @@ pub(crate) async fn run_openai(
 		})
 		.collect::<Vec<ChatCompletionRequestMessage>>();
 
-	messages.insert(
-		0,
-		async_openai::types::ChatCompletionRequestUserMessageArgs::default()
-			.content(transcript)
-			.build()
-			.unwrap()
-			.into(),
-	);
+	if !transcript.is_empty() {
+		messages.insert(
+			0,
+			async_openai::types::ChatCompletionRequestUserMessageArgs::default()
+				.content(transcript)
+				.build()
+				.unwrap()
+				.into(),
+		);
+	}
 
 	// dbg!(&messages);
 
 	let request = CreateChatCompletionRequestArgs::default()
-		.model("gpt-4-0125-preview")
-		// .model("gpt-3.5-turbo-0125")
+		.model(model)
 		.max_tokens(4096u16)
 		.messages(messages)
 		.build()?;
@@ -917,18 +1046,52 @@ pub(crate) async fn run_openai(
 			Ok(response) => {
 				response.choices.iter().for_each(|chat_choice| {
 					if let Some(ref content) = chat_choice.delta.content {
-						WHEEL_WINDOWS
-							.lock()
-							.unwrap()
-							.get_mut(i)
-							.unwrap()
-							.0
-							.get_mut(j)
-							.unwrap()
-							.content
-							.push_str(content);
-						ctx.request_repaint();
+						callback(content);
 					}
+				});
+			}
+			Err(err) => {
+				panic!("error: {err}");
+			}
+		}
+	}
+
+	Ok(())
+}
+
+pub(crate) async fn run_openai_completion(
+	tripwire: Tripwire,
+	prompt: String,
+	callback: impl Fn(&String) + Send + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
+	use async_openai::{types::CreateCompletionRequestArgs, Client};
+	use futures::StreamExt;
+
+	let client = Client::new();
+
+	let mut logit_bias: HashMap<String, serde_json::Value> = HashMap::new();
+
+	["198", "271", "1432", "4815", "1980", "382", "720", "627"].iter().for_each(|s| {
+		logit_bias
+			.insert(s.to_string(), serde_json::Value::Number(serde_json::Number::from_f64(-100.).unwrap()));
+	});
+
+	let request = CreateCompletionRequestArgs::default()
+		.model("gpt-3.5-turbo-instruct")
+		.max_tokens(100u16)
+		.logit_bias(logit_bias)
+		.prompt(prompt)
+		.n(1)
+		.stream(true)
+		.build()?;
+
+	let mut stream = client.completions().create_stream(request).await?.take_until_if(tripwire);
+
+	while let Some(result) = stream.next().await {
+		match result {
+			Ok(response) => {
+				response.choices.iter().for_each(|c| {
+					callback(&c.text);
 				});
 			}
 			Err(err) => {

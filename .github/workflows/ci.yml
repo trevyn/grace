@@ -41,7 +41,7 @@ jobs:
 
       - run: echo "BUILD_ID=$(cat build_id/build_id)" >> $GITHUB_ENV
 
-      - run: rustup default nightly && rustup update nightly
+      - run: rustup default stable && rustup update stable
 
       - run: cargo build --release
 

@@ -93,7 +93,6 @@ pub(crate) async fn self_update() -> Result<(), Box<dyn std::error::Error>> {
 	let mut current_exe_update = current_exe.clone();
 	current_exe_update.set_extension("update")?;
 	let current_exe_update = current_exe_update;
-	let bytes_len = bytes.len();
 
 	tokio::task::spawn_blocking(move || -> Result<(), tracked::StringError> {
 		let mut f =

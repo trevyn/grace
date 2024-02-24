@@ -21,6 +21,9 @@ migrations_append_only = [
     "CREATE TABLE sampledata (rowid INTEGER PRIMARY KEY) STRICT",
     "ALTER TABLE sampledata ADD COLUMN record_ms INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE sampledata ADD COLUMN sample_data BLOB NOT NULL DEFAULT ''",
+    "CREATE TABLE prompt (rowid INTEGER PRIMARY KEY) STRICT",
+    "ALTER TABLE prompt ADD COLUMN time_ms INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE prompt ADD COLUMN prompt TEXT NOT NULL DEFAULT ''",
 ]
 output_generated_schema_for_your_information_do_not_edit = """
   CREATE TABLE _turbosql_migrations (
@@ -41,6 +44,11 @@ output_generated_schema_for_your_information_do_not_edit = """
     card_id INTEGER NOT NULL DEFAULT 0,
     time_ms INTEGER NOT NULL DEFAULT 0,
     action TEXT NOT NULL DEFAULT ''
+  ) STRICT
+  CREATE TABLE prompt (
+    rowid INTEGER PRIMARY KEY,
+    time_ms INTEGER NOT NULL DEFAULT 0,
+    prompt TEXT NOT NULL DEFAULT ''
   ) STRICT
   CREATE TABLE sampledata (
     rowid INTEGER PRIMARY KEY,
@@ -113,6 +121,24 @@ sql_type = "INTEGER NOT NULL"
 [[output_generated_tables_do_not_edit.cardlog.columns]]
 name = "action"
 rust_type = "Action"
+sql_type = "TEXT NOT NULL"
+
+[output_generated_tables_do_not_edit.prompt]
+name = "prompt"
+
+[[output_generated_tables_do_not_edit.prompt.columns]]
+name = "rowid"
+rust_type = "Option < i64 >"
+sql_type = "INTEGER PRIMARY KEY"
+
+[[output_generated_tables_do_not_edit.prompt.columns]]
+name = "time_ms"
+rust_type = "i64"
+sql_type = "INTEGER NOT NULL"
+
+[[output_generated_tables_do_not_edit.prompt.columns]]
+name = "prompt"
+rust_type = "String"
 sql_type = "TEXT NOT NULL"
 
 [output_generated_tables_do_not_edit.sampledata]

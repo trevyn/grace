@@ -143,6 +143,13 @@ struct CardLog {
 	action: Action,
 }
 
+#[derive(Turbosql, Default)]
+struct Prompt {
+	rowid: Option<i64>,
+	time_ms: i64,
+	prompt: String,
+}
+
 struct Resource {
 	/// HTTP response
 	response: ehttp::Response,
@@ -697,6 +704,9 @@ impl eframe::App for App {
 					if do_it {
 						let ref mut messages = wheel_windows.get_mut(i).unwrap().0;
 						messages.truncate(do_it_j + 1);
+						Prompt { rowid: None, time_ms: now_ms(), prompt: messages.last().unwrap().content.clone() }
+							.insert()
+							.unwrap();
 						let orig_messages = messages.clone();
 						messages.push(ChatMessage { role: Assistant, content: String::new() });
 						messages.push(ChatMessage { role: User, content: String::new() });

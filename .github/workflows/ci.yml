@@ -54,6 +54,12 @@ jobs:
 
       - run: cargo build --release
 
+      - run: ls -la
+      - run: ls -la
+        working-directory: target
+      - run: ls -la
+        working-directory: target/release
+
       - run: |
           mv target/release/scarlett scarlett
 

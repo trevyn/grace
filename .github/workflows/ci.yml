@@ -32,11 +32,11 @@ jobs:
     name: build rust ${{ matrix.rust }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
-  strategy:
-    fail-fast: false
-    matrix:
-      os: [macos-latest, ubuntu-latest, windows-latest]
-      rust: [stable, beta]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        rust: [stable, beta]
 
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:

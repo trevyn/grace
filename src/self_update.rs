@@ -1,8 +1,15 @@
 use futures::stream::StreamExt;
-use std::os::unix::fs::OpenOptionsExt;
 
+#[cfg(windows)]
+pub(crate) async fn self_update() -> Result<(), Box<dyn std::error::Error>> {
+	Ok(())
+}
+
+#[cfg(not(windows))]
 #[tracked::tracked]
 pub(crate) async fn self_update() -> Result<(), Box<dyn std::error::Error>> {
+	use std::os::unix::fs::OpenOptionsExt;
+
 	if option_env!("BUILD_ID").is_none() {
 		eprintln!("Running DEV; updates disabled.",);
 		return Ok(());

@@ -38,7 +38,6 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
         rust: [stable, beta]
 
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -60,8 +59,11 @@ jobs:
       - run: ls
         working-directory: target/release
 
-      - run: |
-          mv target/release/scarlett scarlett
+      - run: mv target/release/scarlett scarlett
+        if: ${{ matrix.os != 'windows-latest' }}
+
+      - run: mv target/release/scarlett.exe scarlett.exe
+        if: ${{ matrix.os == 'windows-latest' }}
 
       - uses: actions/upload-artifact@v4
         if: ${{ matrix.rust == 'stable' }}
@@ -86,8 +88,8 @@ jobs:
 
       - run: |
           mv macos-latest/scarlett scarlett
-          mv windows-latest/scarlett scarlett-win
+          mv windows-latest/scarlett.exe scarlett.exe
 
-      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett scarlett-win
+      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett scarlett.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

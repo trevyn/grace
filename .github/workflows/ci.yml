@@ -27,11 +27,17 @@ jobs:
           name: build_id
           path: build_id
 
-  release:
-    permissions:
-      contents: write
+  build:
     needs: [assign]
-    runs-on: macos-latest
+    name: build rust ${{ matrix.rust }} ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+  strategy:
+    fail-fast: false
+    matrix:
+      os: [macos-latest, ubuntu-latest, windows-latest]
+      rust: [stable, beta]
+
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
@@ -41,15 +47,38 @@ jobs:
 
       - run: echo "BUILD_ID=$(cat build_id/build_id)" >> $GITHUB_ENV
 
-      - run: rustup default stable && rustup update stable
+      - run: rustup default ${{ matrix.rust }} && rustup update ${{ matrix.rust }}
 
       - run: cargo build --release
 
       - run: |
           mv target/release/scarlett scarlett
 
-      # - run: zip -9 scarlett.zip scarlett
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.rust == 'stable' }}
+        with:
+          name: ${{ matrix.os }}
+          path: scarlett
 
-      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett
+      # - run: zip -9 scarlett.zip scarlett
+  release:
+    permissions:
+      contents: write
+    needs: [assign, build]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+
+      - run: cat build_id/build_id
+
+      - run: echo "BUILD_ID=$(cat build_id/build_id)" >> $GITHUB_ENV
+
+      - run: |
+          mv macos-latest/scarlett scarlett
+          mv windows-latest/scarlett scarlett-win
+
+      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett scarlett-win
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

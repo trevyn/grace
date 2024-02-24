@@ -49,6 +49,9 @@ jobs:
 
       - run: rustup default ${{ matrix.rust }} && rustup update ${{ matrix.rust }}
 
+      - run: sudo apt-get install libgtk-3-dev
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+
       - run: cargo build --release
 
       - run: |

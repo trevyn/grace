@@ -32,7 +32,7 @@ serde_json = "1"
 stream-cancel = "0.8" 
 tokio = {version = "1", features = ["full"]} 
 tracked = "0.5" 
-turbosql = {git = "https://github.com/trevyn/turbosql", branch = "main"} 
+turbosql = "0.10.0" 
 
 # this can be removed when updating to egui 0.26
 [target.'cfg(any(target_os = "windows"))'.dependencies]
@@ -50,8 +50,6 @@ codegen-units = 1
 lto = true
 
 [patch.crates-io]
-# turbosql = 
-
 # If you want to use the bleeding edge version of egui and eframe:
 # egui = { git = "https://github.com/emilk/egui", branch = "master" }
 # eframe = { git = "https://github.com/emilk/egui", branch = "master" }

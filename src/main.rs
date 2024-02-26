@@ -901,7 +901,7 @@ async fn main() -> eframe::Result<()> {
 	// std::thread::spawn(move || rt.block_on(async {}));
 
 	eframe::run_native(
-		"scarlett",
+		"grace",
 		eframe::NativeOptions {
 			viewport: egui::ViewportBuilder::default()
 				.with_inner_size([400.0, 300.0])

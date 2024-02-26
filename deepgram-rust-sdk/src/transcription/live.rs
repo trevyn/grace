@@ -234,7 +234,6 @@ where
             pairs.append_pair("filler_words", "true");
             pairs.append_pair("utterance_end_ms", "1000");
             pairs.append_pair("endpointing", "500");
-            pairs.append_pair("keywords", "scarlett:1.0");
             pairs.append_pair("keywords", "ChatGPT:1.0");
             pairs.append_pair("keywords", "GPT:1.0");
 

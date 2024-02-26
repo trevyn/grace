@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "scarlett"
+name = "grace"
 publish = false
 rust-version = "1.72"
 version = "0.1.0"

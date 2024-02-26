@@ -1,4 +1,4 @@
-# scarlett
+# grace
 
 macOS only for now.
 
@@ -10,8 +10,8 @@ You'll need:
 In Terminal:
 
 ```
-curl -OL https://github.com/trevyn/scarlett/releases/latest/download/scarlett
-chmod +x scarlett
-xattr -dr com.apple.quarantine scarlett
-OPENAI_API_KEY=sk-YOUR-OPENAI-API-KEY-HERE DEEPGRAM_API_KEY=YOUR-DEEPGRAM-API-KEY-HERE ./scarlett
+curl -OL https://github.com/trevyn/grace/releases/latest/download/grace
+chmod +x grace
+xattr -dr com.apple.quarantine grace
+OPENAI_API_KEY=sk-YOUR-OPENAI-API-KEY-HERE DEEPGRAM_API_KEY=YOUR-DEEPGRAM-API-KEY-HERE ./grace
 ```

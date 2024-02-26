@@ -59,19 +59,19 @@ jobs:
       - run: ls
         working-directory: target/release
 
-      - run: mv target/release/scarlett scarlett
+      - run: mv target/release/grace grace
         if: ${{ matrix.os != 'windows-latest' }}
 
-      - run: mv target/release/scarlett.exe scarlett
+      - run: mv target/release/grace.exe grace
         if: ${{ matrix.os == 'windows-latest' }}
 
       - uses: actions/upload-artifact@v4
         if: ${{ matrix.rust == 'stable' }}
         with:
           name: ${{ matrix.os }}
-          path: scarlett
+          path: grace
 
-      # - run: zip -9 scarlett.zip scarlett
+      # - run: zip -9 grace.zip grace
   release:
     permissions:
       contents: write
@@ -87,9 +87,9 @@ jobs:
       - run: echo "BUILD_ID=$(cat build_id/build_id)" >> $GITHUB_ENV
 
       - run: |
-          mv macos-latest/scarlett scarlett
-          mv windows-latest/scarlett scarlett.exe
+          mv macos-latest/grace grace
+          mv windows-latest/grace grace.exe
 
-      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes scarlett scarlett.exe
+      - run: gh release create ${{ env.BUILD_ID }} --target ${{ github.sha }} --generate-notes grace grace.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

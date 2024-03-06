@@ -7,7 +7,7 @@ rust-version = "1.72"
 version = "0.1.0"
 
 [dependencies]
-async-openai = "0.18" 
+async-openai = "0.19" 
 byteorder = "1" 
 bytes = "1" 
 cpal = "0.15" 

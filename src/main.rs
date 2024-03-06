@@ -888,7 +888,7 @@ impl ColoredText {
 }
 
 #[tokio::main]
-async fn main() -> eframe::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
 	eprintln!("database at {:?}", turbosql::db_path());
@@ -910,7 +910,9 @@ async fn main() -> eframe::Result<()> {
 			..Default::default()
 		},
 		Box::new(|cc| Box::new(App::new(cc))),
-	)
+	)?;
+
+	Ok(())
 }
 
 fn microphone_as_stream() -> Receiver<Result<Bytes, RecvError>> {

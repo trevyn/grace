@@ -701,6 +701,8 @@ impl eframe::App for App {
 							// }
 						});
 					}
+					ui.label("[command-enter to send]");
+
 					if do_it {
 						let ref mut messages = wheel_windows.get_mut(i).unwrap().0;
 						messages.truncate(do_it_j + 1);

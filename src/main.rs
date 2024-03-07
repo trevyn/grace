@@ -369,13 +369,19 @@ impl eframe::App for App {
 		SidePanel::left("left_panel").show(ctx, |ui| {
 			ui.label(option_env!("BUILD_ID").unwrap_or("DEV"));
 
-			// let mut setting = Setting::get("openai_key");
-			// ui.label("openai key:");
-			// ui
-			// 	.add(TextEdit::singleline(&mut setting.value).desired_width(f32::INFINITY))
-			// 	.changed()
-			// 	.then(|| setting.save());
-			// ui.allocate_space(ui.available_size());
+			let mut setting = Setting::get("deepgram_api_key");
+			ui.label("deepgram api key:");
+			ui
+				.add(TextEdit::singleline(&mut setting.value).desired_width(f32::INFINITY))
+				.changed()
+				.then(|| setting.save());
+
+			let mut setting2 = Setting::get("openai_api_key");
+			ui.label("openai api key:");
+			ui
+				.add(TextEdit::singleline(&mut setting2.value).desired_width(f32::INFINITY))
+				.changed()
+				.then(|| setting2.save());
 
 			for (i, session) in self.sessions.iter().enumerate() {
 				if ui.button(format!("Session {}: {} s", i, session.duration_ms() as f32 / 1000.0)).clicked() {
@@ -388,10 +394,7 @@ impl eframe::App for App {
 						// dbg!(session.samples().len());
 						audiofile::save_wav_file(samples);
 
-						let deepgram_api_key =
-							env::var("DEEPGRAM_API_KEY").expect("DEEPGRAM_API_KEY environmental variable");
-
-						let dg_client = Deepgram::new(&deepgram_api_key);
+						let dg_client = Deepgram::new(Setting::get("deepgram_api_key").value);
 
 						let file = File::open("temp_audio.aac").await.unwrap();
 
@@ -447,7 +450,7 @@ impl eframe::App for App {
 				tokio::spawn(async {
 					println!("transcription starting...");
 
-					let dg = Deepgram::new(env::var("DEEPGRAM_API_KEY").unwrap());
+					let dg = Deepgram::new(Setting::get("deepgram_api_key").value);
 
 					let mut results = dg
 						.transcription()
@@ -511,10 +514,7 @@ impl eframe::App for App {
 						))
 						.build();
 
-					let deepgram_api_key =
-						env::var("DEEPGRAM_API_KEY").expect("DEEPGRAM_API_KEY environmental variable");
-
-					let dg_client = Deepgram::new(&deepgram_api_key);
+					let dg_client = Deepgram::new(Setting::get("deepgram_api_key").value);
 
 					eprintln!("transcribing...");
 					let mut response = dg_client.transcription().prerecorded(source, &options).await.unwrap();
@@ -899,6 +899,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	eprintln!("database at {:?}", turbosql::db_path());
 
 	self_update::self_update().await.ok();
+
+	let mut setting = Setting::get("deepgram_api_key");
+	if let Ok(key) = env::var("DEEPGRAM_API_KEY") {
+		setting.value = key;
+		setting.save();
+	};
+
+	let mut setting = Setting::get("openai_api_key");
+	if let Ok(key) = env::var("OPENAI_API_KEY") {
+		setting.value = key;
+		setting.save();
+	};
+
+	// gcal2().await
+
+	// Ok(())
 	// let rt = tokio::runtime::Runtime::new().expect("Unable to create Runtime");
 
 	// // Enter the runtime so that `tokio::spawn` is available immediately.
@@ -1031,7 +1047,9 @@ pub(crate) async fn run_openai(
 	use async_openai::{types::CreateChatCompletionRequestArgs, Client};
 	use futures::StreamExt;
 
-	let client = Client::new();
+	let client = Client::with_config(
+		async_openai::config::OpenAIConfig::new().with_api_key(Setting::get("openai_api_key").value),
+	);
 
 	let mut messages = messages
 		.into_iter()
@@ -1102,7 +1120,9 @@ pub(crate) async fn run_openai_completion(
 	use async_openai::{types::CreateCompletionRequestArgs, Client};
 	use futures::StreamExt;
 
-	let client = Client::new();
+	let client = Client::with_config(
+		async_openai::config::OpenAIConfig::new().with_api_key(Setting::get("openai_api_key").value),
+	);
 
 	let mut logit_bias: HashMap<String, serde_json::Value> = HashMap::new();
 

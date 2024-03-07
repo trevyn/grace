@@ -44,10 +44,10 @@ enum Word {
 }
 
 impl Word {
-	fn speaker(&self) -> u8 {
+	fn speaker(&self) -> usize {
 		match self {
-			Word::Live(word) => word.speaker,
-			Word::Prerecorded(word) => word.speaker.unwrap() as u8,
+			Word::Live(word) => word.speaker as usize,
+			Word::Prerecorded(word) => word.speaker.unwrap(),
 		}
 	}
 	fn word(&self) -> &str {
@@ -222,7 +222,10 @@ impl App {
 				if let Some(word) = word {
 					if word.speaker() != current_speaker {
 						current_speaker = word.speaker();
-						transcript.push_str(&format!("\n[{}]: ", self.speaker_names[current_speaker as usize]));
+						transcript.push_str(&format!(
+							"\n[{}]: ",
+							self.speaker_names.get(current_speaker).unwrap_or(&String::new())
+						));
 					}
 					transcript.push_str(&format!("{} ", word.word()));
 				}
@@ -430,10 +433,6 @@ impl eframe::App for App {
 					// samples is single-channel f32 little endian
 					// make into mp3 file
 				}
-			}
-
-			while self.speaker_names.len() < 20 {
-				self.speaker_names.push(format!("{}", self.speaker_names.len()));
 			}
 
 			if ui
@@ -753,11 +752,17 @@ impl eframe::App for App {
 							if let Some(word) = word {
 								if word.speaker() != current_speaker {
 									current_speaker = word.speaker();
+									while current_speaker >= self.speaker_names.len() {
+										self.speaker_names.push(format!("{}", current_speaker));
+									}
 									ui.end_row();
 									ui.horizontal_wrapped(|ui| {
 										ui.label(
-											RichText::new(format!("[{}]: ", self.speaker_names[current_speaker as usize]))
-												.size(30.0),
+											RichText::new(format!(
+												"[{}]: ",
+												self.speaker_names.get(current_speaker).unwrap_or(&String::new())
+											))
+											.size(30.0),
 										);
 									});
 								}

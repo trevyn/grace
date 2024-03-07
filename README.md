@@ -2,6 +2,8 @@
 
 macOS is tested, Windows is largely untested.
 
+<img width="1114" alt="Screen Shot 2024-03-06 at 4 55 05 PM" src="https://github.com/trevyn/grace/assets/230691/1ff14230-d544-441c-b98f-6d4be6eec829">
+
 ## Getting started
 
 You'll need:

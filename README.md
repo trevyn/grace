@@ -1,37 +1,49 @@
 # grace
 
-macOS only for now.
+macOS is tested, Windows is largely untested.
+
+## Getting started
 
 You'll need:
 
 - Deepgram API key: https://console.deepgram.com
-  - Log into your Deepgram account, if you already have one, or create a new one using your GitHub account, and create a New API Key;
+  - Log into your Deepgram account, if you already have one, or create a new one using your GitHub account, and create a New API Key ("Member" permissions is fine);
 - OpenAI API key: https://platform.openai.com/api-keys
   - Go ahead and create a new API key on OpenAI to further use with grace;
     - Add some $ on your platform.openai.com account;
 
 In Terminal:
 
-download:
-
 ```
 curl -OL https://github.com/trevyn/grace/releases/latest/download/grace
 chmod +x grace
 xattr -dr com.apple.quarantine grace
+./grace
 ```
 
-launch:
+1. once you're in, enter your deepgram and openai api keys in the upper-left
+2. press the record button
+3. have it listen in to your conversation for like 5-10 minutes loosely
+4. name the speakers on the left by the numbers and see their names show up real time
+5. click add window
+6. ask questions about the transcript, grace has your conversation now as context eg: "summarize the above transcript and point out any blindspots, answer the sentence stem for each participant: what I really want but I'm not saying is.." (ask /AltonSun on Facebook if you have questions about how to use it)
+7. hit command+return to send it off and see.
+8. feel free to edit the first prompt if you want to change it, or continue by asking follow up questions later
+9. open a second window with 'add window' if you'd like to carry on a second or more conversation simultaneously
+10. enjoy having every area of your life ambiently enhanced by an AI!
+
+## Hacking on grace
+
+If you want to hack on the code (pull requests welcome!), install Rust:
 
 ```
-OPENAI_API_KEY= DEEPGRAM_API_KEY= ./grace
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-1. once you're in, press the record button
-2. have it listen in to your conversation for like 5-10 minutes loosely
-3. name the speakers on the left by the numbers and see their names show up real time
-4. click add window
-5. ask questions about the transcript, grace has your conversation now as context eg: "summarize the above transcript and point out any blindspots, answer the sentence stem for each participant: what I really want but I'm not saying is.." (ask /AltonSun on Facebook if you have questions about how to use it)
-6. hit ctrl+return to send it off and see.
-7. feel free to edit the first prompt if you want to change it, or continue by asking follow up questions later
-8. open a second window with 'add window' if you'd like to carry on a second or more conversation simultaneously
-9. enjoy having every area of your life ambiently enhanced by an AI!
+or on windows, download and run https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe
+
+clone the repo and:
+
+```
+cargo run
+```
